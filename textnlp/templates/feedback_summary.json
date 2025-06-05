@@ -1,0 +1,16 @@
+{
+  "template": "# Feedback Summary\n\n## Product: ${product_name}\n\n### Overview\n${overview}\n\n### Key Points\n- ${point1}\n- ${point2}\n- ${point3}\n\n### Customer Sentiment\nPositive: ${positive_percent}%\nNegative: ${negative_percent}%\nNeutral: ${neutral_percent}%\n\n### Recommendations\n${recommendations}\n\n### Next Steps\n${next_steps}",
+  "variables": [
+    "product_name",
+    "overview",
+    "point1",
+    "point2",
+    "point3",
+    "positive_percent",
+    "negative_percent",
+    "neutral_percent",
+    "recommendations",
+    "next_steps"
+  ],
+  "description": "Template for generating product feedback summaries"
+}

@@ -1,0 +1,12 @@
+{
+  "template": "# Customer Support Chat\n\nCustomer: ${customer_name}\nProduct: ${product_name}\nIssue Category: ${issue_category}\n\n## Initial Request\n${initial_request}\n\n## Agent Response\nHello ${customer_name},\n\nThank you for reaching out about ${product_name}. I understand you're experiencing an issue with ${issue_category}.\n\n${response_body}\n\nPlease let me know if you need any further assistance.\n\nBest regards,\n${agent_name}\nCustomer Support Team",
+  "variables": [
+    "customer_name",
+    "product_name",
+    "issue_category",
+    "initial_request",
+    "response_body",
+    "agent_name"
+  ],
+  "description": "Template for generating customer support responses"
+}

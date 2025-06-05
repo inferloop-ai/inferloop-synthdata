@@ -1,0 +1,11 @@
+prompt_id,prompt_text,category,max_length
+1,"Write a short story about a robot learning to feel emotions.",fiction,150
+2,"Explain how photosynthesis works in simple terms.",educational,100
+3,"Create a product description for a new smartphone with AI features.",marketing,120
+4,"Write a recipe for chocolate chip cookies.",cooking,200
+5,"Describe the main features of quantum computing.",technology,150
+6,"Write a professional email requesting a meeting with a potential client.",business,100
+7,"Create a poem about the changing seasons.",creative,80
+8,"Explain the concept of machine learning to a 10-year-old.",educational,120
+9,"Write a review for an imaginary restaurant called 'The Digital Bistro'.",review,150
+10,"Create a short dialogue between two friends discussing their weekend plans.",dialogue,180
