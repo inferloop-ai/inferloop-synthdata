@@ -1,0 +1,32 @@
+# data/sample_templates/ydata_config.yaml
+# Sample YData Synthetic Configuration Template
+generator_type: "ydata"
+model_type: "wgan_gp"  # Options: wgan_gp, cramer_gan, dragan
+num_samples: 1500
+
+# Column specifications
+categorical_columns:
+  - "category"
+  - "region"
+
+continuous_columns:
+  - "age"
+  - "income"
+  - "score"
+
+# Training settings
+epochs: 1000
+batch_size: 128
+learning_rate: 1e-4
+
+# YData-specific hyperparameters
+hyperparameters:
+  noise_dim: 64
+  layers_dim: 256
+  beta1: 0.5
+  beta2: 0.9
+  n_critic: 5  # for WGAN-GP
+
+# Quality control
+validate_output: true
+quality_threshold: 0.75
