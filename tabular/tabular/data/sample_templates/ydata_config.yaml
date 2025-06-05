@@ -1,0 +1,56 @@
+# YData Synthetic Data Generator Configuration
+
+# Model type - options: 'gan', 'vae', 'cgan'
+model_type: 'gan'
+
+# Model parameters
+model_parameters:
+  # General parameters
+  batch_size: 500
+  epochs: 300
+  learning_rate: 0.0002
+  
+  # Network architecture
+  latent_dim: 128
+  generator_dim: [256, 256]
+  discriminator_dim: [256, 256]
+  
+  # Training parameters
+  beta_1: 0.5
+  beta_2: 0.9
+  noise_dim: 128
+  pac: 10  # Number of discriminator updates per generator update
+
+# Data preprocessing
+preprocessing:
+  # Normalization strategy - options: 'min_max', 'standard', 'none'
+  normalization: 'min_max'
+  
+  # Handle missing values - options: 'mean', 'median', 'mode', 'none'
+  missing_values: 'mean'
+  
+  # Encoding strategy for categorical columns
+  categorical_encoding: 'one_hot'  # options: 'one_hot', 'ordinal'
+
+# Column-specific configurations
+column_config:
+  # Example column configurations
+  # age:
+  #   type: 'numerical'
+  #   min: 18
+  #   max: 100
+  # 
+  # gender:
+  #   type: 'categorical'
+  #   categories: ['M', 'F', 'Other']
+
+# Privacy settings
+privacy:
+  # Enable differential privacy
+  enable_dp: false
+  
+  # Epsilon value for differential privacy (lower = more private)
+  epsilon: 1.0
+  
+  # Delta value for differential privacy
+  delta: 0.00001

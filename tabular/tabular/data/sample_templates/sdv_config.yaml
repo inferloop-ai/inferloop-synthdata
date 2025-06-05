@@ -1,0 +1,78 @@
+# data/sample_templates/sdv_config.yaml
+# Sample SDV Configuration Template
+generator_type: "sdv"
+model_type: "gaussian_copula"  # Options: gaussian_copula, ctgan, copula_gan, tvae
+num_samples: 1000
+
+# Column specifications
+categorical_columns:
+  - "category"
+  - "region"
+  - "status"
+
+continuous_columns:
+  - "age"
+  - "income"
+  - "score"
+
+datetime_columns:
+  - "date_created"
+  - "last_updated"
+
+# Model hyperparameters
+hyperparameters:
+  default_distribution: "beta"  # For Gaussian Copula
+  numerical_distributions:
+    age: "gamma"
+    income: "lognorm"
+
+# Training settings
+epochs: 300
+batch_size: 500
+learning_rate: 2e-4
+
+# Quality control
+validate_output: true
+quality_threshold: 0.8
+
+# Constraints (optional)
+primary_key: "id"
+constraints:
+  - type: "range"
+    column: "age"
+    min: 18
+    max: 100
+  - type: "positive"
+    column: "income"
+
+
+# data/sample_templates/ctgan_config.yaml
+# Sample CTGAN Configuration Template
+generator_type: "ctgan"
+model_type: "ctgan"  # Options: ctgan, tvae
+num_samples: 2000
+
+# Column specifications (automatic detection for others)
+categorical_columns:
+  - "category"
+  - "region"
+  - "customer_type"
+
+# Training settings
+epochs: 500
+batch_size: 1000
+learning_rate: 2e-4
+
+# CTGAN-specific hyperparameters
+hyperparameters:
+  generator_dim: [256, 256]
+  discriminator_dim: [256, 256]
+  generator_lr: 2e-4
+  discriminator_lr: 2e-4
+  generator_decay: 1e-6
+  discriminator_decay: 1e-6
+  pac: 10
+
+# Quality control
+validate_output: true
+quality_threshold: 0.7

@@ -1,0 +1,30 @@
+# data/sample_templates/ctgan_config.yaml
+# Sample CTGAN Configuration Template
+generator_type: "ctgan"
+model_type: "ctgan"  # Options: ctgan, tvae
+num_samples: 2000
+
+# Column specifications (automatic detection for others)
+categorical_columns:
+  - "category"
+  - "region"
+  - "customer_type"
+
+# Training settings
+epochs: 500
+batch_size: 1000
+learning_rate: 2e-4
+
+# CTGAN-specific hyperparameters
+hyperparameters:
+  generator_dim: [256, 256]
+  discriminator_dim: [256, 256]
+  generator_lr: 2e-4
+  discriminator_lr: 2e-4
+  generator_decay: 1e-6
+  discriminator_decay: 1e-6
+  pac: 10
+
+# Quality control
+validate_output: true
+quality_threshold: 0.7

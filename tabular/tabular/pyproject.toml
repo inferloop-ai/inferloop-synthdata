@@ -1,0 +1,110 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inferloop-synthetic"
+version = "0.1.0"
+description = "Unified wrapper for synthetic data generation tools"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Inferloop Team", email = "team@inferloop.ai"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+keywords = ["synthetic-data", "privacy", "machine-learning", "gan", "data-generation"]
+dependencies = [
+    "pandas>=1.5.0",
+    "numpy>=1.21.0",
+    "scikit-learn>=1.1.0",
+    "scipy>=1.9.0",
+    "pydantic>=2.0.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+    "python-multipart>=0.0.6",
+    "pyyaml>=6.0",
+    "matplotlib>=3.5.0",
+    "seaborn>=0.11.0"
+]
+requires-python = ">=3.8"
+
+[project.optional-dependencies]
+sdv = ["sdv>=1.0.0"]
+ctgan = ["ctgan>=0.7.0"]
+ydata = ["ydata-synthetic>=1.0.0"]
+all = [
+    "sdv>=1.0.0",
+    "ctgan>=0.7.0", 
+    "ydata-synthetic>=1.0.0",
+    "sdmetrics>=0.10.0"
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.4.0",
+    "jupyter>=1.0.0",
+    "notebook>=7.0.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/inferloop/inferloop-synthetic"
+Repository = "https://github.com/inferloop/inferloop-synthetic"
+Documentation = "https://inferloop-synthetic.readthedocs.io"
+"Bug Reports" = "https://github.com/inferloop/inferloop-synthetic/issues"
+
+[project.scripts]
+inferloop-synthetic = "inferloop_synthetic.cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["inferloop_synthetic*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+line_length = 88
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+filterwarnings = [
+    "error",
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+]
+
+
