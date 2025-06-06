@@ -1,0 +1,183 @@
+# configs/default.yaml
+"""
+Default configuration for Audio Synthetic Data Framework
+"""
+
+# Audio processing configuration
+audio:
+  sample_rate: 22050          # Sample rate for audio processing
+  duration: 5.0               # Default duration in seconds
+  channels: 1                 # Number of audio channels (1=mono, 2=stereo)
+  format: "wav"               # Default audio format
+  bit_depth: 16               # Bit depth for audio files
+  
+# Generation configuration
+generation:
+  default_method: "diffusion" # Default generation method
+  privacy_level: "medium"     # Default privacy level (low/medium/high)
+  num_samples: 100            # Default number of samples to generate
+  seed: null                  # Random seed (null for random)
+  
+  # Method-specific configurations
+  methods:
+    diffusion:
+      model_path: "./models/diffusion_model.pt"
+      denoising_steps: 50
+      guidance_scale: 7.5
+      scheduler: "ddpm"
+      
+    gan:
+      model_path: "./models/gan_model.pt"
+      latent_dim: 128
+      noise_type: "gaussian"
+      
+    vae:
+      model_path: "./models/vae_model.pt"
+      latent_dim: 64
+      beta: 1.0
+      
+    tts:
+      model_path: "./models/tts_model.pt"
+      speaker_embeddings: "./models/speaker_embeddings.pt"
+      vocoder: "hifigan"
+      
+# Validation configuration
+validation:
+  quality_threshold: 0.7      # Minimum quality score
+  privacy_threshold: 0.8      # Minimum privacy score
+  fairness_threshold: 0.75    # Minimum fairness score
+  
+  # Protected attributes for fairness analysis
+  protected_attributes:
+    - "gender"
+    - "age_group"
+    - "accent"
+    - "language"
+    - "dialect"
+  
+  # Quality metrics configuration
+  quality:
+    enable_snr: true
+    enable_spectral_analysis: true
+    enable_perceptual_metrics: true
+    enable_realism_scoring: true
+    
+  # Privacy metrics configuration  
+  privacy:
+    enable_speaker_verification: true
+    enable_voice_conversion_quality: true
+    enable_privacy_leakage_detection: true
+    speaker_model_path: "./models/speaker_verification.pt"
+    
+  # Fairness metrics configuration
+  fairness:
+    enable_demographic_parity: true
+    enable_equal_opportunity: true
+    enable_individual_fairness: true
+    enable_diversity_analysis: true
+    
+# Model paths and configurations
+models:
+  base_model_dir: "./models"
+  
+  # Pre-trained models
+  pretrained:
+    diffusion: "stabilityai/stable-audio-open-1.0"
+    tts: "microsoft/speecht5_tts"
+    vocoder: "nvidia/hifigan"
+    speaker_verification: "microsoft/unispeech-sat-base"
+    
+  # Custom model configurations
+  custom:
+    enable_training: false
+    training_data_path: "./data/training"
+    validation_data_path: "./data/validation"
+    checkpoint_dir: "./checkpoints"
+    
+# Data processing configuration
+data:
+  input_formats: ["wav", "mp3", "flac", "ogg", "m4a"]
+  preprocessing:
+    normalize: true
+    trim_silence: true
+    apply_filters: false
+    
+  augmentation:
+    enable_augmentation: false
+    pitch_shift_range: [-2, 2]  # semitones
+    time_stretch_range: [0.8, 1.2]
+    noise_level: 0.01
+    
+# Output configuration
+output:
+  default_format: "wav"
+  quality: "high"              # low/medium/high
+  normalize: true
+  add_metadata: true
+  create_manifests: true
+  
+  # File naming
+  naming_convention: "{method}_{timestamp}_{index:03d}"
+  include_config_hash: true
+  
+# API configuration (for server mode)
+api:
+  host: "0.0.0.0"
+  port: 8000
+  max_file_size: 100  # MB
+  max_samples_per_request: 100
+  enable_cors: true
+  cors_origins: ["*"]
+  
+  # Rate limiting
+  rate_limit:
+    enable: true
+    requests_per_minute: 60
+    burst_size: 10
+    
+  # Authentication (if enabled)
+  auth:
+    enable: false
+    api_key_header: "X-API-Key"
+    valid_api_keys: []
+    
+# Logging configuration
+logging:
+  level: "INFO"               # DEBUG/INFO/WARNING/ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # File logging
+  file_logging:
+    enable: true
+    filename: "audio_synth.log"
+    max_size: "10MB"
+    backup_count: 5
+    
+  # Performance logging
+  performance:
+    enable: true
+    log_generation_time: true
+    log_validation_time: true
+    log_memory_usage: true
+    
+# Privacy and security configuration
+privacy:
+  # Data handling
+  data_retention_days: 30
+  auto_cleanup: true
+  encrypt_at_rest: false
+  
+  # Privacy-preserving techniques
+  techniques:
+    enable_differential_privacy: false
+    epsilon: 1.0  # Privacy budget
+    enable_voice_conversion: true
+    enable_pitch_shifting: true
+    enable_formant_shifting: true
+    
+# Experimental features
+experimental:
+  enable_multi_gpu: false
+  enable_distributed_generation: false
+  enable_real_time_generation: false
+  enable_interactive_mode: false

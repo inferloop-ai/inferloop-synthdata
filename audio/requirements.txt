@@ -1,0 +1,61 @@
+# requirements.txt
+"""
+Dependencies for Audio Synthetic Data Framework
+"""
+
+# Core ML and Audio Processing
+torch>=2.0.0
+torchaudio>=2.0.0
+numpy>=1.21.0
+scipy>=1.7.0
+librosa>=0.9.0
+soundfile>=0.10.0
+
+# Deep Learning Models
+transformers>=4.20.0
+diffusers>=0.18.0
+accelerate>=0.20.0
+
+# API and Web Framework
+fastapi>=0.95.0
+uvicorn>=0.20.0
+pydantic>=1.10.0
+python-multipart>=0.0.6
+
+# CLI and Configuration
+click>=8.0.0
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# Data Processing and Validation
+pandas>=1.5.0
+scikit-learn>=1.2.0
+matplotlib>=3.5.0
+seaborn>=0.11.0
+
+# Privacy and Security
+cryptography>=3.4.0
+hashlib3>=2.0.0
+
+# Audio Analysis
+pesq>=0.0.3
+pystoi>=0.3.3
+pypesq>=1.2.4
+
+# Utilities
+tqdm>=4.64.0
+requests>=2.28.0
+aiofiles>=22.1.0
+jinja2>=3.1.0
+
+# Development and Testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+black>=22.0.0
+flake8>=5.0.0
+mypy>=1.0.0
+
+# Optional dependencies for advanced features
+# fairseq>=0.12.0  # For advanced speech models
+# espnet>=202301   # For end-to-end speech processing
+# asteroid>=0.6.0  # For source separation

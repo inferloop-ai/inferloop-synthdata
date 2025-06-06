@@ -1,0 +1,50 @@
+# Training configuration template (configs/training_config.yaml)
+"""
+Training configuration for audio synthesis models
+"""
+
+# Model configuration
+model:
+  type: "gan"  # or "vae"
+  latent_dim: 128
+  beta: 1.0  # For beta-VAE
+
+# Audio configuration
+audio:
+  sample_rate: 22050
+  duration: 5.0
+  target_length: 110250  # sample_rate * duration
+  num_channels: 1
+
+# Training configuration
+training:
+  epochs: 100
+  batch_size: 32
+  num_workers: 4
+  augment: true
+  
+  # Learning rates
+  lr_g: 0.0002  # Generator learning rate
+  lr_d: 0.0002  # Discriminator learning rate
+  lr: 0.001     # VAE learning rate
+  
+  # Adam optimizer parameters
+  beta1: 0.5
+  beta2: 0.999
+  
+  # Directories
+  checkpoint_dir: "./checkpoints"
+  samples_dir: "./training_samples"
+  logs_dir: "./logs"
+
+# Data configuration
+data:
+  train_dir: "./data/train"
+  val_dir: "./data/val"
+  test_dir: "./data/test"
+
+# Logging configuration
+logging:
+  log_interval: 50
+  save_interval: 10
+  sample_interval: 5
