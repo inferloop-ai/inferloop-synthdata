@@ -1,0 +1,56 @@
+# configs/models/gan_config.yaml
+"""
+GAN model configuration
+"""
+
+model:
+  type: "gan"
+  
+  # Generator configuration
+  generator:
+    latent_dim: 128
+    hidden_dim: 512
+    num_layers: 6
+    activation: "leaky_relu"
+    normalization: "batch_norm"
+    output_activation: "tanh"
+    
+    # Architecture
+    architecture: "conv_transpose"
+    kernel_sizes: [4, 4, 4, 4, 4, 4]
+    strides: [2, 2, 2, 2, 2, 2]
+    
+  # Discriminator configuration
+  discriminator:
+    hidden_dim: 64
+    num_layers: 5
+    activation: "leaky_relu"
+    normalization: "layer_norm"
+    dropout: 0.3
+    
+    # Architecture
+    kernel_sizes: [4, 4, 4, 4, 4]
+    strides: [2, 2, 2, 2, 2]
+    
+  # Training parameters
+  training:
+    generator_lr: 0.0002
+    discriminator_lr: 0.0002
+    beta1: 0.5
+    beta2: 0.999
+    
+    # Training strategy
+    discriminator_steps: 1
+    generator_steps: 1
+    gradient_penalty: 10.0
+    
+  # Loss configuration
+  loss:
+    type: "wgan_gp"              # or "vanilla", "lsgan"
+    label_smoothing: 0.1
+    
+  # Conditioning
+  conditioning:
+    enable: true
+    condition_dim: 64
+    condition_method: "concat"    # or "projection", "attention"

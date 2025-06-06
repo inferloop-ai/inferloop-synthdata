@@ -1,0 +1,46 @@
+# configs/models/diffusion_config.yaml
+"""
+Diffusion model configuration
+"""
+
+model:
+  type: "diffusion"
+  architecture: "unet"
+  
+  # Model dimensions
+  input_channels: 1
+  output_channels: 1
+  hidden_dim: 512
+  num_layers: 16
+  attention_heads: 8
+  
+  # Diffusion parameters
+  num_timesteps: 1000
+  beta_schedule: "cosine"
+  beta_start: 0.0001
+  beta_end: 0.02
+  
+  # Training parameters
+  learning_rate: 1e-4
+  batch_size: 16
+  gradient_clip: 1.0
+  
+  # Conditioning
+  text_conditioning: true
+  speaker_conditioning: true
+  class_conditioning: false
+  
+  # Architecture details
+  unet:
+    down_blocks: [64, 128, 256, 512]
+    up_blocks: [512, 256, 128, 64]
+    attention_layers: [2, 3]     # Which layers have attention
+    dropout: 0.1
+    
+  # Audio processing
+  audio:
+    sample_rate: 22050
+    hop_length: 256
+    n_fft: 1024
+    mel_bins: 80
+

@@ -1,0 +1,290 @@
+# configs/production.yaml
+"""
+Production configuration for Audio Synthetic Data Framework
+"""
+
+# Audio processing configuration
+audio:
+  sample_rate: 22050
+  duration: 10.0                # Longer duration for production
+  channels: 1
+  format: "wav"
+  bit_depth: 16
+
+# Generation configuration
+generation:
+  default_method: "diffusion"
+  privacy_level: "high"         # Higher privacy in production
+  num_samples: 50               # More samples for production
+  seed: null
+  
+  # Method-specific configurations
+  methods:
+    diffusion:
+      model_path: "/models/production/diffusion_model.pt"
+      denoising_steps: 100       # More steps for better quality
+      guidance_scale: 7.5
+      scheduler: "ddpm"
+      
+    gan:
+      model_path: "/models/production/gan_model.pt"
+      latent_dim: 256            # Larger latent space
+      noise_type: "gaussian"
+      
+    vae:
+      model_path: "/models/production/vae_model.pt"
+      latent_dim: 128
+      beta: 1.5
+      
+    tts:
+      model_path: "/models/production/tts_model.pt"
+      speaker_embeddings: "/models/production/speaker_embeddings.pt"
+      vocoder: "hifigan"
+
+# Validation configuration
+validation:
+  quality_threshold: 0.8        # Higher quality threshold
+  privacy_threshold: 0.9        # Higher privacy threshold
+  fairness_threshold: 0.8       # Higher fairness threshold
+  
+  # Protected attributes for fairness analysis
+  protected_attributes:
+    - "gender"
+    - "age_group"
+    - "accent"
+    - "language"
+    - "dialect"
+    - "socioeconomic_status"
+  
+  # Quality metrics configuration
+  quality:
+    enable_snr: true
+    enable_spectral_analysis: true
+    enable_perceptual_metrics: true
+    enable_realism_scoring: true
+    enable_advanced_metrics: true
+    
+  # Privacy metrics configuration
+  privacy:
+    enable_speaker_verification: true
+    enable_voice_conversion_quality: true
+    enable_privacy_leakage_detection: true
+    enable_biometric_protection: true
+    speaker_model_path: "/models/production/speaker_verification.pt"
+    
+  # Fairness metrics configuration
+  fairness:
+    enable_demographic_parity: true
+    enable_equal_opportunity: true
+    enable_individual_fairness: true
+    enable_diversity_analysis: true
+    enable_intersectional_analysis: true
+
+# Model paths and configurations
+models:
+  base_model_dir: "/models/production"
+  
+  # Pre-trained models (production versions)
+  pretrained:
+    diffusion: "stabilityai/stable-audio-open-1.0"
+    tts: "microsoft/speecht5_tts"
+    vocoder: "nvidia/hifigan"
+    speaker_verification: "microsoft/unispeech-sat-large"
+    
+  # Custom model configurations
+  custom:
+    enable_training: false
+    training_data_path: "/data/training"
+    validation_data_path: "/data/validation"
+    checkpoint_dir: "/checkpoints"
+    model_registry: "/models/registry"
+
+# Data processing configuration
+data:
+  input_formats: ["wav", "mp3", "flac", "ogg", "m4a", "aac"]
+  preprocessing:
+    normalize: true
+    trim_silence: true
+    apply_filters: true
+    noise_reduction: true
+    
+  augmentation:
+    enable_augmentation: true
+    pitch_shift_range: [-1, 1]    # Conservative for production
+    time_stretch_range: [0.9, 1.1]
+    noise_level: 0.005            # Lower noise for production
+
+# Output configuration
+output:
+  default_format: "flac"         # Lossless format for production
+  quality: "high"
+  normalize: true
+  add_metadata: true
+  create_manifests: true
+  compression_level: 8           # High compression for FLAC
+  
+  # File naming
+  naming_convention: "{method}_{privacy_level}_{timestamp}_{index:04d}"
+  include_config_hash: true
+  include_validation_results: true
+
+# API configuration (production settings)
+api:
+  host: "0.0.0.0"
+  port: 8000
+  max_file_size: 500             # 500MB for production
+  max_samples_per_request: 1000  # Higher limit for production
+  enable_cors: false             # Disable in production
+  cors_origins: []
+  
+  # Rate limiting (production settings)
+  rate_limit:
+    enable: true
+    requests_per_minute: 120     # Higher rate limit
+    burst_size: 20
+    
+  # Authentication (production)
+  auth:
+    enable: true
+    api_key_header: "X-API-Key"
+    valid_api_keys: []           # Load from environment
+    jwt_enabled: true
+    jwt_secret_key: null         # Load from environment
+    
+  # SSL configuration
+  ssl:
+    enable: true
+    cert_file: "/ssl/cert.pem"
+    key_file: "/ssl/key.pem"
+
+# Logging configuration (production)
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # File logging
+  file_logging:
+    enable: true
+    filename: "/logs/audio_synth.log"
+    max_size: "100MB"
+    backup_count: 10
+    
+  # Performance logging
+  performance:
+    enable: true
+    log_generation_time: true
+    log_validation_time: true
+    log_memory_usage: true
+    log_gpu_usage: true
+    
+  # Structured logging
+  structured:
+    enable: true
+    format: "json"
+    
+  # External logging
+  external:
+    enable: true
+    elasticsearch_url: null      # Load from environment
+    logstash_host: null          # Load from environment
+
+# Privacy and security configuration (production)
+privacy:
+  # Data handling
+  data_retention_days: 7         # Shorter retention in production
+  auto_cleanup: true
+  encrypt_at_rest: true
+  encryption_key: null           # Load from environment
+  
+  # Privacy-preserving techniques
+  techniques:
+    enable_differential_privacy: true
+    epsilon: 0.5                 # Stronger privacy
+    enable_voice_conversion: true
+    enable_pitch_shifting: true
+    enable_formant_shifting: true
+    enable_speaker_anonymization: true
+    
+  # Compliance
+  compliance:
+    gdpr_enabled: true
+    ccpa_enabled: true
+    hipaa_enabled: false
+    audit_logging: true
+
+# Monitoring and observability (production)
+monitoring:
+  enable: true
+  
+  # Metrics collection
+  metrics:
+    prometheus_enabled: true
+    prometheus_port: 9090
+    custom_metrics: true
+    
+  # Health checks
+  health:
+    enable: true
+    check_interval: 30
+    timeout: 10
+    
+  # Alerting
+  alerting:
+    enable: true
+    webhook_url: null            # Load from environment
+    email_alerts: true
+    slack_alerts: true
+    
+  # Tracing
+  tracing:
+    enable: true
+    jaeger_endpoint: null        # Load from environment
+    sample_rate: 0.1
+
+# Scaling and performance (production)
+performance:
+  # GPU configuration
+  gpu:
+    enable: true
+    device_ids: [0, 1, 2, 3]     # Multiple GPUs
+    memory_fraction: 0.9
+    
+  # CPU configuration
+  cpu:
+    num_workers: 16              # More workers for production
+    batch_size: 32
+    
+  # Caching
+  caching:
+    enable: true
+    redis_url: null              # Load from environment
+    cache_ttl: 3600
+    
+  # Queue management
+  queue:
+    enable: true
+    max_queue_size: 10000
+    worker_timeout: 300
+    
+# Database configuration (production)
+database:
+  enable: true
+  type: "postgresql"
+  host: null                     # Load from environment
+  port: 5432
+  database: "audio_synth_prod"
+  username: null                 # Load from environment
+  password: null                 # Load from environment
+  pool_size: 20
+  max_overflow: 30
+
+# Backup and disaster recovery
+backup:
+  enable: true
+  s3_bucket: null                # Load from environment
+  backup_interval: "daily"
+  retention_days: 30
+  encrypt_backups: true
+
+
+
