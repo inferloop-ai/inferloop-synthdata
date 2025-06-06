@@ -1,0 +1,40 @@
+# ==================== configs/profiling_config.yaml ====================
+profiling_config = '''
+# Real-time Profiling Configuration
+profiling:
+  window_size: 100  # Number of frames to analyze
+  update_frequency: 300  # Seconds between profile updates
+  
+  visual_features:
+    - "brightness"
+    - "contrast" 
+    - "entropy"
+    - "blur_detection"
+    - "noise_level"
+    
+  semantic_features:
+    - "object_detection"  # YOLO
+    - "scene_classification"  # CLIP
+    - "face_detection"
+    
+  models:
+    yolo_model: "yolov8n.pt"
+    clip_model: "ViT-B/32"
+    face_model: "opencv_dnn"
+    
+  output:
+    save_interval: 600  # Save profile every 10 minutes
+    profile_dir: "./profiles"
+    
+  sources:
+    unsplash:
+      queries: ["urban", "nature", "indoor", "outdoor"]
+      per_query_limit: 50
+    webcam:
+      device_id: 0
+      fps: 1  # Capture 1 frame per second
+    drone:
+      rtmp_url: "${DRONE_FEED_URL}"
+    edge_camera:
+      api_url: "${EDGE_CAMERA_API_URL}"
+      polling_interval: 5

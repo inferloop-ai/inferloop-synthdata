@@ -1,0 +1,33 @@
+groups:
+  - name: generation_alerts
+    rules:
+      - alert: HighGenerationLatency
+        expr: histogram_quantile(0.95, rate(generation_duration_seconds_bucket[5m])) > 30
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High generation latency detected"
+          description: "95th percentile generation time is {{ $value }} seconds"
+
+      - alert: LowQualityImages
+        expr: avg(image_quality_fid_score) > 100
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Low quality images being generated"
+          description: "Average FID score is {{ $value }}, indicating poor quality"
+
+      - alert: GenerationServiceDown
+        expr: up{job="synthetic-image-generator"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Generation service is down"
+          description: "The synthetic image generation service is not responding"
+'''
+
+# ==================== CI/CD Pipeline ====================
+ci_cd_pipeline = '''

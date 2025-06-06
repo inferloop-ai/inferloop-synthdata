@@ -1,0 +1,52 @@
+{
+  "dashboard": {
+    "title": "Synthetic Image Generation Metrics",
+    "panels": [
+      {
+        "title": "Generation Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(images_generated_total[5m])",
+            "legendFormat": "Images/sec"
+          }
+        ]
+      },
+      {
+        "title": "Quality Scores",
+        "type": "graph", 
+        "targets": [
+          {
+            "expr": "avg(image_quality_fid_score)",
+            "legendFormat": "FID Score"
+          },
+          {
+            "expr": "avg(image_quality_ssim_score)",
+            "legendFormat": "SSIM Score"
+          }
+        ]
+      },
+      {
+        "title": "Generation Latency",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(generation_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile"
+          }
+        ]
+      },
+      {
+        "title": "Error Rate",
+        "type": "singlestat",
+        "targets": [
+          {
+            "expr": "rate(generation_errors_total[5m])",
+            "legendFormat": "Errors/sec"
+          }
+        ]
+      }
+    ]
+  }
+}
+

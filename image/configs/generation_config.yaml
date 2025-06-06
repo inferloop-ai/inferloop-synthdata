@@ -1,0 +1,37 @@
+# ==================== configs/generation_config.yaml ====================
+generation_config = '''
+# Generation Configuration
+generation:
+  method: "diffusion"  # Options: diffusion, gan, simulation
+  batch_size: 16
+  num_samples: 1000
+  output_format: "png"
+  resolution: [512, 512]
+  
+diffusion:
+  model_name: "runwayml/stable-diffusion-v1-5"
+  num_inference_steps: 50
+  guidance_scale: 7.5
+  use_lora: true
+  lora_path: "./models/lora_custom.safetensors"
+  
+gan:
+  model_path: "./models/stylegan2.pkl"
+  truncation_psi: 0.7
+  noise_mode: "random"
+  
+simulation:
+  engine: "omniverse"  # Options: omniverse, unreal, cvedia
+  environment: "urban_city"
+  weather: "clear"
+  time_of_day: "noon"
+  
+conditioning:
+  use_profile: true
+  profile_path: "./profiles/stream_latest.json"
+  adaptation_weight: 0.8
+  
+output:
+  save_path: "./data/generated"
+  include_metadata: true
+  annotation_format: "coco"  # Options: coco, yolo, voc

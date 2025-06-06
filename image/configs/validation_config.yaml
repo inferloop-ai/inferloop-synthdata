@@ -1,0 +1,27 @@
+# ==================== configs/validation_config.yaml ====================
+validation_config = '''
+# Validation Configuration
+validation:
+  metrics:
+    - "fid"
+    - "ssim"
+    - "lpips"
+    - "clip_similarity"
+    - "diversity_score"
+  
+  quality:
+    fid_threshold: 50.0
+    ssim_threshold: 0.7
+    lpips_threshold: 0.3
+    
+  privacy:
+    blur_faces: true
+    detect_pii: true
+    anonymization_level: "medium"
+    
+  diversity:
+    min_entropy: 0.8
+    cluster_threshold: 0.85
+    
+  batch_size: 32
+  reference_dataset: "./data/real"

@@ -1,0 +1,40 @@
+from setuptools import setup, find_packages
+
+setup(
+    name="agentic-ai-synthetic-image-gen",
+    version="1.0.0",
+    description="Synthetic image generation for Agentic AI testing and validation",
+    packages=find_packages(),
+    install_requires=[
+        "torch>=1.9.0",
+        "torchvision>=0.10.0",
+        "diffusers>=0.21.0",
+        "transformers>=4.21.0",
+        "opencv-python>=4.5.0",
+        "scikit-image>=0.19.0",
+        "scikit-learn>=1.0.0",
+        "numpy>=1.21.0",
+        "pandas>=1.3.0",
+        "matplotlib>=3.4.0",
+        "seaborn>=0.11.0",
+        "pillow>=8.3.0",
+        "requests>=2.26.0",
+        "pyyaml>=5.4.0",
+        "fastapi>=0.68.0",
+        "uvicorn>=0.15.0",
+        "click>=8.0.0",
+        "tqdm>=4.62.0",
+        "boto3>=1.18.0",
+        "pyarrow>=5.0.0",
+        "ultralytics>=8.0.0",
+        "clip-by-openai>=1.0",
+        "lpips>=0.1.4",
+        "pytorch-fid>=0.3.0",
+    ],
+    python_requires=">=3.8",
+    entry_points={
+        "console_scripts": [
+            "synth-image=cli.synth_image_generate:main",
+        ],
+    },
+)
