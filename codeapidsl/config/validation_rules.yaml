@@ -1,0 +1,49 @@
+# Validation rules for code generation
+rules:
+  syntax:
+    enabled: true
+    ignore_warnings: false
+    languages:
+      - python
+      - javascript
+      - typescript
+      - java
+      - go
+  
+  style:
+    enabled: true
+    line_length: 100
+    indentation: 2
+    rules:
+      - no_trailing_whitespace
+      - consistent_quotes
+      - proper_spacing
+  
+  security:
+    enabled: true
+    checks:
+      - sql_injection
+      - xss_vulnerabilities
+      - insecure_dependencies
+      - hardcoded_credentials
+  
+  performance:
+    enabled: false
+    thresholds:
+      execution_time_ms: 500
+      memory_usage_mb: 100
+  
+  compilation:
+    enabled: true
+    timeout_seconds: 30
+    include_warnings: true
+  
+  testing:
+    enabled: true
+    generate_tests: true
+    min_coverage: 80
+    test_frameworks:
+      python: pytest
+      javascript: jest
+      java: junit
+      go: testing

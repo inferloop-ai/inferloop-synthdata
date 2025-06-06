@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  synth-code-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_ENDPOINT=http://codellama:8001/v1/completions
+      - STARCODER_ENDPOINT=http://starcoder:8002/v1/completions
+    depends_on:
+      - codellama
+      - starcoder
+    volumes:
+      - ./config:/app/config
+      - ./output:/app/output
+
+  codellama:
+    image: ghcr.io/huggingface/text-generation-inference:latest
+    ports:
+      - "8001:80"
+    environment:
+      - MODEL_ID=codellama/CodeLlama-13b-Instruct-hf
+      - NUM_SHARD=1
+    volumes:
+      - ./models:/data
+
+  starcoder:
+    image: ghcr.io/huggingface/text-generation-inference:latest
+    ports:
+      - "8002:80"
+    environment:
+      - MODEL_ID=bigcode/starcoder
+      - NUM_SHARD=1
+    volumes:
+      - ./models:/data
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"

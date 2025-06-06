@@ -1,0 +1,53 @@
+formats:
+  json:
+    template: |
+      {
+        "code": "{{ code }}",
+        "language": "{{ language }}",
+        "metadata": {
+          "model": "{{ model }}",
+          "timestamp": "{{ timestamp }}",
+          "execution_time": {{ execution_time }}
+        },
+        "validation": {
+          "passed": {{ validation.passed }},
+          "errors": {{ validation.errors | tojson }}
+        }
+      }
+  
+  markdown:
+    template: |
+      # Generated Code - {{ timestamp }}
+      
+      ```{{ language }}
+      {{ code }}
+      ```
+      
+      ## Metadata
+      - Model: {{ model }}
+      - Execution Time: {{ execution_time }}ms
+      
+      ## Validation Results
+      Status: {{ "Passed" if validation.passed else "Failed" }}
+      {% if validation.errors %}
+      Errors:
+      {% for error in validation.errors %}
+      - {{ error }}
+      {% endfor %}
+      {% endif %}
+  
+  yaml:
+    template: |
+      code: |
+        {{ code | indent(2) }}
+      language: {{ language }}
+      metadata:
+        model: {{ model }}
+        timestamp: {{ timestamp }}
+        execution_time: {{ execution_time }}
+      validation:
+        passed: {{ validation.passed }}
+        errors:
+        {% for error in validation.errors %}
+          - {{ error }}
+        {% endfor %}
