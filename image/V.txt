@@ -1,0 +1,1113 @@
+# ==================== delivery/export_to_parquet.py ====================
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+from pathlib import Path
+from typing import List, Dict, Optional, Any
+import logging
+from datetime import datetime
+import json
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+class ParquetExporter:
+    """Export synthetic image datasets to Parquet format for efficient data processing."""
+    
+    def __init__(self):
+        self.exported_count = 0
+    
+    def export_dataset(self, 
+                      dataset_dir: str,
+                      output_file: str,
+                      include_metadata: bool = True,
+                      include_features: bool = True,
+                      compression: str = 'snappy',
+                      row_group_size: int = 10000) -> Dict:
+        """Export a complete dataset to Parquet format."""
+        
+        dataset_path = Path(dataset_dir)
+        if not dataset_path.exists():
+            raise ValueError(f"Dataset directory not found: {dataset_dir}")
+        
+        # Get all images
+        image_files = []
+        for ext in ['*.png', '*.jpg', '*.jpeg', '*.tiff']:
+            image_files.extend(dataset_path.glob(ext))
+        
+        if not image_files:
+            raise ValueError(f"No images found in {dataset_dir}")
+        
+        logger.info(f"Exporting {len(image_files)} images to Parquet...")
+        
+        # Collect all data
+        records = []
+        for i, image_file in enumerate(image_files):
+            try:
+                record = self._create_image_record(
+                    image_file, 
+                    dataset_path,
+                    include_metadata,
+                    include_features
+                )
+                records.append(record)
+                
+                if (i + 1) % 1000 == 0:
+                    logger.info(f"Processed {i + 1}/{len(image_files)} images")
+                    
+            except Exception as e:
+                logger.error(f"Failed to process {image_file}: {e}")
+                continue
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(records)
+        
+        # Optimize data types
+        df = self._optimize_datatypes(df)
+        
+        # Write to Parquet
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        df.to_parquet(
+            output_file,
+            compression=compression,
+            index=False,
+            row_group_size=row_group_size
+        )
+        
+        self.exported_count = len(records)
+        
+        # Create summary
+        summary = {
+            'export_timestamp': datetime.now().isoformat(),
+            'total_images': len(image_files),
+            'exported_images': self.exported_count,
+            'output_file': str(output_path),
+            'dataset_directory': str(dataset_path),
+            'format': 'parquet',
+            'compression': compression,
+            'file_size_mb': output_path.stat().st_size / (1024 * 1024),
+            'schema': self._get_schema_info(df),
+            'includes_metadata': include_metadata,
+            'includes_features': include_features
+        }
+        
+        # Save summary
+        summary_file = output_path.parent / f"{output_path.stem}_summary.json"
+        with open(summary_file, 'w') as f:
+            json.dump(summary, f, indent=2)
+        
+        logger.info(f"Export complete: {self.exported_count} records written to {output_file}")
+        
+        return summary
+    
+    def _create_image_record(self, 
+                           image_file: Path,
+                           dataset_path: Path,
+                           include_metadata: bool,
+                           include_features: bool) -> Dict:
+        """Create a record for a single image."""
+        
+        relative_path = image_file.relative_to(dataset_path)
+        
+        record = {
+            'id': str(image_file.stem),
+            'file_path': str(relative_path),
+            'file_name': image_file.name,
+            'created_at': datetime.fromtimestamp(image_file.stat().st_mtime)
+        }
+        
+        # Add basic image metadata
+        if include_metadata:
+            metadata = self._extract_basic_metadata(image_file)
+            record.update(metadata)
+        
+        # Add computed features
+        if include_features:
+            features = self._extract_features(image_file)
+            record.update(features)
+        
+        # Add annotations as structured data
+        annotations = self._load_structured_annotations(image_file, dataset_path)
+        if annotations:
+            record.update(annotations)
+        
+        return record
+    
+    def _extract_basic_metadata(self, image_file: Path) -> Dict:
+        """Extract basic metadata optimized for Parquet storage."""
+        
+        from PIL import Image
+        import os
+        
+        try:
+            with Image.open(image_file) as img:
+                return {
+                    'width': img.width,
+                    'height': img.height,
+                    'channels': len(img.getbands()) if img.getbands() else 3,
+                    'mode': img.mode,
+                    'format': img.format,
+                    'file_size_bytes': os.path.getsize(image_file),
+                    'aspect_ratio': round(img.width / img.height, 3),
+                    'resolution_category': self._categorize_resolution(img.width, img.height)
+                }
+                
+        except Exception as e:
+            logger.warning(f"Could not extract metadata from {image_file}: {e}")
+            return {
+                'width': None,
+                'height': None,
+                'channels': None,
+                'mode': None,
+                'format': None,
+                'file_size_bytes': None,
+                'aspect_ratio': None,
+                'resolution_category': None
+            }
+    
+    def _extract_features(self, image_file: Path) -> Dict:
+        """Extract numerical features suitable for ML analysis."""
+        
+        try:
+            import cv2
+            
+            # Load image
+            image = cv2.imread(str(image_file))
+            if image is None:
+                return {}
+            
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            
+            # Basic statistics
+            features = {
+                'brightness_mean': float(np.mean(gray)),
+                'brightness_std': float(np.std(gray)),
+                'contrast_rms': float(np.sqrt(np.mean((gray - np.mean(gray)) ** 2))),
+                'sharpness_laplacian': float(cv2.Laplacian(gray, cv2.CV_64F).var()),
+                'entropy': self._calculate_entropy(gray),
+            }
+            
+            # Color features (if color image)
+            if len(image.shape) == 3:
+                hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+                
+                features.update({
+                    'saturation_mean': float(np.mean(hsv[:,:,1])),
+                    'saturation_std': float(np.std(hsv[:,:,1])),
+                    'hue_dominant': float(np.argmax(np.bincount(hsv[:,:,0].flatten()))),
+                    'color_diversity': self._calculate_color_diversity(image)
+                })
+            
+            # Texture features
+            features.update(self._extract_texture_features(gray))
+            
+            return features
+            
+        except Exception as e:
+            logger.warning(f"Could not extract features from {image_file}: {e}")
+            return {}
+    
+    def _calculate_entropy(self, gray_image: np.ndarray) -> float:
+        """Calculate Shannon entropy."""
+        hist, _ = np.histogram(gray_image, bins=256, range=(0, 256))
+        hist = hist / hist.sum()
+        entropy = -np.sum(hist * np.log2(hist + 1e-10))
+        return float(entropy)
+    
+    def _calculate_color_diversity(self, image: np.ndarray) -> float:
+        """Calculate color diversity score."""
+        # Reshape and sample pixels for efficiency
+        pixels = image.reshape(-1, 3)
+        if len(pixels) > 10000:
+            sample_indices = np.random.choice(len(pixels), 10000, replace=False)
+            pixels = pixels[sample_indices]
+        
+        unique_colors = len(np.unique(pixels, axis=0))
+        total_pixels = len(pixels)
+        return float(unique_colors / total_pixels)
+    
+    def _extract_texture_features(self, gray_image: np.ndarray) -> Dict:
+        """Extract basic texture features."""
+        
+        import cv2
+        from skimage import feature
+        
+        try:
+            # Edge density
+            edges = cv2.Canny(gray_image, 100, 200)
+            edge_density = float(np.sum(edges > 0) / edges.size)
+            
+            # Local Binary Pattern
+            lbp = feature.local_binary_pattern(gray_image, 8, 1.5, method='uniform')
+            lbp_variance = float(np.var(lbp))
+            
+            return {
+                'edge_density': edge_density,
+                'texture_variance': lbp_variance,
+                'smoothness_score': float(1 - edge_density)
+            }
+            
+        except Exception as e:
+            logger.warning(f"Texture feature extraction failed: {e}")
+            return {
+                'edge_density': None,
+                'texture_variance': None,
+                'smoothness_score': None
+            }
+    
+    def _load_structured_annotations(self, image_file: Path, dataset_path: Path) -> Dict:
+        """Load annotations as structured columns."""
+        
+        annotations = {}
+        
+        # Load object detection annotations
+        detection_file = dataset_path / "annotations" / f"{image_file.stem}.json"
+        if detection_file.exists():
+            try:
+                with open(detection_file, 'r') as f:
+                    data = json.load(f)
+                
+                # Convert to structured format
+                annotations.update({
+                    'num_objects': len(data.get('objects', [])),
+                    'object_classes': [obj.get('class', '') for obj in data.get('objects', [])],
+                    'has_person': any(obj.get('class') == 'person' for obj in data.get('objects', [])),
+                    'has_vehicle': any(obj.get('class') in ['car', 'truck', 'bus'] for obj in data.get('objects', [])),
+                    'bbox_count': len([obj for obj in data.get('objects', []) if 'bbox' in obj])
+                })
+                
+            except Exception as e:
+                logger.warning(f"Could not load annotations from {detection_file}: {e}")
+        
+        return annotations
+    
+    def _categorize_resolution(self, width: int, height: int) -> str:
+        """Categorize image resolution."""
+        
+        total_pixels = width * height
+        
+        if total_pixels >= 8000000:  # 8MP+
+            return 'high'
+        elif total_pixels >= 2000000:  # 2MP+
+            return 'medium'
+        elif total_pixels >= 500000:   # 0.5MP+
+            return 'low'
+        else:
+            return 'very_low'
+    
+    def _optimize_datatypes(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame data types for efficient storage."""
+        
+        # Convert object columns with limited unique values to category
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                unique_ratio = df[col].nunique() / len(df)
+                if unique_ratio < 0.5:  # Less than 50% unique values
+                    df[col] = df[col].astype('category')
+        
+        # Optimize integer columns
+        for col in df.select_dtypes(include=['int64']):
+            col_min = df[col].min()
+            col_max = df[col].max()
+            
+            if col_min >= 0:  # Unsigned integers
+                if col_max < 255:
+                    df[col] = df[col].astype('uint8')
+                elif col_max < 65535:
+                    df[col] = df[col].astype('uint16')
+                elif col_max < 4294967295:
+                    df[col] = df[col].astype('uint32')
+            else:  # Signed integers
+                if col_min >= -128 and col_max <= 127:
+                    df[col] = df[col].astype('int8')
+                elif col_min >= -32768 and col_max <= 32767:
+                    df[col] = df[col].astype('int16')
+                elif col_min >= -2147483648 and col_max <= 2147483647:
+                    df[col] = df[col].astype('int32')
+        
+        # Optimize float columns
+        for col in df.select_dtypes(include=['float64']):
+            if df[col].min() >= np.finfo(np.float32).min and df[col].max() <= np.finfo(np.float32).max:
+                df[col] = df[col].astype('float32')
+        
+        return df
+    
+    def _get_schema_info(self, df: pd.DataFrame) -> Dict:
+        """Get schema information for the DataFrame."""
+        
+        schema_info = {
+            'columns': list(df.columns),
+            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
+            'num_rows': len(df),
+            'num_columns': len(df.columns),
+            'memory_usage_mb': df.memory_usage(deep=True).sum() / (1024 * 1024)
+        }
+        
+        return schema_info
+
+def export_to_parquet(dataset_dir: str, 
+                     output_file: str, 
+                     **kwargs) -> Dict:
+    """Convenience function for Parquet export."""
+    
+    exporter = ParquetExporter()
+    return exporter.export_dataset(dataset_dir, output_file, **kwargs)
+
+if __name__ == "__main__":
+    # Example usage
+    try:
+        result = export_to_parquet(
+            dataset_dir="./data/generated/test_dataset",
+            output_file="./exports/test_dataset.parquet",
+            include_metadata=True,
+            include_features=True,
+            compression='snappy'
+        )
+        print(f"Export completed: {result}")
+    except Exception as e:
+        print(f"Export failed: {e}")
+
+# ==================== delivery/export_to_s3.py ====================
+import boto3
+import json
+from pathlib import Path
+from typing import Dict, List, Optional, Callable
+import logging
+from datetime import datetime
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
+
+logger = logging.getLogger(__name__)
+
+class S3Exporter:
+    """Export synthetic image datasets to AWS S3."""
+    
+    def __init__(self, 
+                 aws_access_key_id: Optional[str] = None,
+                 aws_secret_access_key: Optional[str] = None,
+                 region_name: str = 'us-east-1'):
+        
+        # Initialize S3 client
+        session = boto3.Session(
+            aws_access_key_id=aws_access_key_id or os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=aws_secret_access_key or os.getenv('AWS_SECRET_ACCESS_KEY'),
+            region_name=region_name
+        )
+        
+        self.s3_client = session.client('s3')
+        self.s3_resource = session.resource('s3')
+        
+        self.uploaded_count = 0
+        self.failed_count = 0
+        self.total_size = 0
+        
+        # Thread-safe counters
+        self._lock = threading.Lock()
+    
+    def export_dataset(self,
+                      dataset_dir: str,
+                      bucket_name: str,
+                      s3_prefix: str = "",
+                      max_workers: int = 10,
+                      include_metadata: bool = True,
+                      public_read: bool = False,
+                      storage_class: str = 'STANDARD',
+                      progress_callback: Optional[Callable] = None) -> Dict:
+        """Export a complete dataset to S3."""
+        
+        dataset_path = Path(dataset_dir)
+        if not dataset_path.exists():
+            raise ValueError(f"Dataset directory not found: {dataset_dir}")
+        
+        # Verify bucket exists
+        try:
+            self.s3_client.head_bucket(Bucket=bucket_name)
+        except Exception as e:
+            raise ValueError(f"Cannot access S3 bucket '{bucket_name}': {e}")
+        
+        # Get all files to upload
+        files_to_upload = []
+        
+        # Image files
+        for ext in ['*.png', '*.jpg', '*.jpeg', '*.tiff', '*.bmp']:
+            files_to_upload.extend(dataset_path.glob(ext))
+        
+        # Metadata files
+        for ext in ['*.json', '*.txt', '*.csv']:
+            files_to_upload.extend(dataset_path.glob(f"**/{ext}"))
+        
+        if not files_to_upload:
+            raise ValueError(f"No files found in {dataset_dir}")
+        
+        logger.info(f"Uploading {len(files_to_upload)} files to s3://{bucket_name}/{s3_prefix}")
+        
+        # Upload files concurrently
+        upload_results = []
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_file = {
+                executor.submit(
+                    self._upload_file,
+                    file_path,
+                    bucket_name,
+                    s3_prefix,
+                    dataset_path,
+                    public_read,
+                    storage_class
+                ): file_path for file_path in files_to_upload
+            }
+            
+            for future in as_completed(future_to_file):
+                file_path = future_to_file[future]
+                try:
+                    result = future.result()
+                    upload_results.append(result)
+                    
+                    with self._lock:
+                        if result['success']:
+                            self.uploaded_count += 1
+                            self.total_size += result['file_size']
+                        else:
+                            self.failed_count += 1
+                    
+                    # Progress callback
+                    if progress_callback:
+                        progress_callback(self.uploaded_count, self.failed_count, len(files_to_upload))
+                    
+                    # Log progress
+                    if self.uploaded_count % 100 == 0:
+                        logger.info(f"Uploaded {self.uploaded_count}/{len(files_to_upload)} files")
+                        
+                except Exception as e:
+                    logger.error(f"Upload failed for {file_path}: {e}")
+                    with self._lock:
+                        self.failed_count += 1
+        
+        # Create dataset manifest
+        manifest = self._create_dataset_manifest(
+            upload_results, 
+            bucket_name, 
+            s3_prefix,
+            dataset_path
+        )
+        
+        # Upload manifest
+        manifest_key = f"{s3_prefix}/dataset_manifest.json" if s3_prefix else "dataset_manifest.json"
+        
+        try:
+            self.s3_client.put_object(
+                Bucket=bucket_name,
+                Key=manifest_key,
+                Body=json.dumps(manifest, indent=2),
+                ContentType='application/json'
+            )
+            logger.info(f"Dataset manifest uploaded to s3://{bucket_name}/{manifest_key}")
+        except Exception as e:
+            logger.error(f"Failed to upload manifest: {e}")
+        
+        # Create summary
+        summary = {
+            'export_timestamp': datetime.now().isoformat(),
+            'bucket_name': bucket_name,
+            's3_prefix': s3_prefix,
+            'dataset_directory': str(dataset_path),
+            'total_files': len(files_to_upload),
+            'uploaded_files': self.uploaded_count,
+            'failed_files': self.failed_count,
+            'total_size_mb': self.total_size / (1024 * 1024),
+            'manifest_key': manifest_key,
+            'storage_class': storage_class,
+            'public_read': public_read,
+            'success_rate': (self.uploaded_count / len(files_to_upload)) * 100 if files_to_upload else 0
+        }
+        
+        logger.info(f"S3 export complete: {self.uploaded_count} files uploaded, {self.failed_count} failed")
+        
+        return summary
+    
+    def _upload_file(self,
+                    file_path: Path,
+                    bucket_name: str,
+                    s3_prefix: str,
+                    dataset_path: Path,
+                    public_read: bool,
+                    storage_class: str) -> Dict:
+        """Upload a single file to S3."""
+        
+        try:
+            # Calculate S3 key
+            relative_path = file_path.relative_to(dataset_path)
+            s3_key = f"{s3_prefix}/{relative_path}" if s3_prefix else str(relative_path)
+            s3_key = s3_key.replace("\\", "/")  # Ensure forward slashes
+            
+            # Determine content type
+            content_type = self._get_content_type(file_path)
+            
+            # Upload parameters
+            upload_params = {
+                'Bucket': bucket_name,
+                'Key': s3_key,
+                'Body': file_path.read_bytes(),
+                'ContentType': content_type,
+                'StorageClass': storage_class
+            }
+            
+            # Set ACL if public read
+            if public_read:
+                upload_params['ACL'] = 'public-read'
+            
+            # Upload file
+            self.s3_client.put_object(**upload_params)
+            
+            file_size = file_path.stat().st_size
+            
+            return {
+                'success': True,
+                'local_path': str(file_path),
+                's3_key': s3_key,
+                's3_url': f"s3://{bucket_name}/{s3_key}",
+                'file_size': file_size,
+                'content_type': content_type
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'local_path': str(file_path),
+                'error': str(e),
+                'file_size': 0
+            }
+    
+    def _get_content_type(self, file_path: Path) -> str:
+        """Determine content type based on file extension."""
+        
+        extension = file_path.suffix.lower()
+        
+        content_types = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.tiff': 'image/tiff',
+            '.bmp': 'image/bmp',
+            '.json': 'application/json',
+            '.txt': 'text/plain',
+            '.csv': 'text/csv',
+            '.parquet': 'application/octet-stream',
+            '.jsonl': 'application/jsonlines'
+        }
+        
+        return content_types.get(extension, 'application/octet-stream')
+    
+    def _create_dataset_manifest(self,
+                               upload_results: List[Dict],
+                               bucket_name: str,
+                               s3_prefix: str,
+                               dataset_path: Path) -> Dict:
+        """Create a dataset manifest with all uploaded files."""
+        
+        successful_uploads = [r for r in upload_results if r['success']]
+        
+        # Organize by file type
+        file_types = {}
+        for result in successful_uploads:
+            extension = Path(result['local_path']).suffix.lower()
+            if extension not in file_types:
+                file_types[extension] = []
+            file_types[extension].append(result)
+        
+        manifest = {
+            'dataset_info': {
+                'name': dataset_path.name,
+                'created_at': datetime.now().isoformat(),
+                'bucket_name': bucket_name,
+                's3_prefix': s3_prefix,
+                'total_files': len(successful_uploads),
+                'total_size_bytes': sum(r['file_size'] for r in successful_uploads)
+            },
+            'file_types': {
+                ext: {
+                    'count': len(files),
+                    'total_size_bytes': sum(f['file_size'] for f in files),
+                    'files': files
+                } for ext, files in file_types.items()
+            },
+            'access_info': {
+                'base_url': f"s3://{bucket_name}/{s3_prefix}" if s3_prefix else f"s3://{bucket_name}",
+                'region': self.s3_client.meta.region_name
+            }
+        }
+        
+        return manifest
+    
+    def download_dataset(self,
+                        bucket_name: str,
+                        s3_prefix: str,
+                        local_dir: str,
+                        max_workers: int = 10) -> Dict:
+        """Download a dataset from S3."""
+        
+        local_path = Path(local_dir)
+        local_path.mkdir(parents=True, exist_ok=True)
+        
+        # List all objects with the prefix
+        objects = []
+        paginator = self.s3_client.get_paginator('list_objects_v2')
+        
+        for page in paginator.paginate(Bucket=bucket_name, Prefix=s3_prefix):
+            if 'Contents' in page:
+                objects.extend(page['Contents'])
+        
+        if not objects:
+            raise ValueError(f"No objects found in s3://{bucket_name}/{s3_prefix}")
+        
+        logger.info(f"Downloading {len(objects)} objects from S3...")
+        
+        downloaded_count = 0
+        failed_count = 0
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_obj = {
+                executor.submit(
+                    self._download_file,
+                    bucket_name,
+                    obj['Key'],
+                    local_path,
+                    s3_prefix
+                ): obj for obj in objects
+            }
+            
+            for future in as_completed(future_to_obj):
+                try:
+                    result = future.result()
+                    if result['success']:
+                        downloaded_count += 1
+                    else:
+                        failed_count += 1
+                        
+                    if downloaded_count % 100 == 0:
+                        logger.info(f"Downloaded {downloaded_count}/{len(objects)} files")
+                        
+                except Exception as e:
+                    logger.error(f"Download failed: {e}")
+                    failed_count += 1
+        
+        summary = {
+            'download_timestamp': datetime.now().isoformat(),
+            'bucket_name': bucket_name,
+            's3_prefix': s3_prefix,
+            'local_directory': str(local_path),
+            'total_objects': len(objects),
+            'downloaded_files': downloaded_count,
+            'failed_files': failed_count,
+            'success_rate': (downloaded_count / len(objects)) * 100 if objects else 0
+        }
+        
+        logger.info(f"S3 download complete: {downloaded_count} files downloaded, {failed_count} failed")
+        
+        return summary
+    
+    def _download_file(self,
+                      bucket_name: str,
+                      s3_key: str,
+                      local_dir: Path,
+                      s3_prefix: str) -> Dict:
+        """Download a single file from S3."""
+        
+        try:
+            # Calculate local file path
+            relative_key = s3_key[len(s3_prefix):].lstrip('/')
+            local_file = local_dir / relative_key
+            
+            # Create parent directories
+            local_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Download file
+            self.s3_client.download_file(bucket_name, s3_key, str(local_file))
+            
+            return {
+                'success': True,
+                's3_key': s3_key,
+                'local_path': str(local_file)
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                's3_key': s3_key,
+                'error': str(e)
+            }
+
+def export_to_s3(dataset_dir: str,
+                bucket_name: str,
+                s3_prefix: str = "",
+                **kwargs) -> Dict:
+    """Convenience function for S3 export."""
+    
+    exporter = S3Exporter()
+    return exporter.export_dataset(dataset_dir, bucket_name, s3_prefix, **kwargs)
+
+if __name__ == "__main__":
+    # Example usage
+    try:
+        def progress_callback(uploaded, failed, total):
+            print(f"Progress: {uploaded}/{total} uploaded, {failed} failed")
+        
+        result = export_to_s3(
+            dataset_dir="./data/generated/test_dataset",
+            bucket_name="my-synthetic-data-bucket",
+            s3_prefix="datasets/test_v1",
+            max_workers=5,
+            progress_callback=progress_callback
+        )
+        print(f"Export completed: {result}")
+    except Exception as e:
+        print(f"Export failed: {e}")
+
+# ==================== generation/generate_gan.py ====================
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+import numpy as np
+from PIL import Image
+from pathlib import Path
+from typing import List, Dict, Optional, Tuple
+import logging
+import pickle
+import json
+
+logger = logging.getLogger(__name__)
+
+class StyleGAN2Generator:
+    """Generate synthetic images using StyleGAN2 architecture."""
+    
+    def __init__(self, 
+                 model_path: Optional[str] = None,
+                 device: Optional[str] = None):
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.model_path = model_path
+        self.generator = None
+        self.latent_dim = 512
+        self.num_layers = 18
+        
+        if model_path:
+            self._load_model(model_path)
+    
+    def _load_model(self, model_path: str):
+        """Load a pre-trained StyleGAN2 model."""
+        try:
+            logger.info(f"Loading StyleGAN2 model from {model_path}")
+            
+            # Load pickle file (typical StyleGAN2 format)
+            with open(model_path, 'rb') as f:
+                model_data = pickle.load(f)
+            
+            # Extract generator
+            if 'G_ema' in model_data:
+                self.generator = model_data['G_ema'].to(self.device)
+            elif 'generator' in model_data:
+                self.generator = model_data['generator'].to(self.device)
+            else:
+                raise ValueError("Could not find generator in model file")
+            
+            self.generator.eval()
+            logger.info("StyleGAN2 model loaded successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to load StyleGAN2 model: {e}")
+            # Fall back to creating a dummy generator for demonstration
+            self._create_dummy_generator()
+    
+    def _create_dummy_generator(self):
+        """Create a simple dummy generator for demonstration purposes."""
+        logger.warning("Creating dummy generator - for demonstration only")
+        
+        class DummyGenerator(nn.Module):
+            def __init__(self, latent_dim=512, output_size=512):
+                super().__init__()
+                self.latent_dim = latent_dim
+                
+                # Simple upsampling network
+                self.network = nn.Sequential(
+                    # Start from 4x4
+                    nn.ConvTranspose2d(latent_dim, 512, 4, 1, 0),
+                    nn.BatchNorm2d(512),
+                    nn.ReLU(True),
+                    
+                    # 8x8
+                    nn.ConvTranspose2d(512, 256, 4, 2, 1),
+                    nn.BatchNorm2d(256),
+                    nn.ReLU(True),
+                    
+                    # 16x16
+                    nn.ConvTranspose2d(256, 128, 4, 2, 1),
+                    nn.BatchNorm2d(128),
+                    nn.ReLU(True),
+                    
+                    # 32x32
+                    nn.ConvTranspose2d(128, 64, 4, 2, 1),
+                    nn.BatchNorm2d(64),
+                    nn.ReLU(True),
+                    
+                    # 64x64
+                    nn.ConvTranspose2d(64, 32, 4, 2, 1),
+                    nn.BatchNorm2d(32),
+                    nn.ReLU(True),
+                    
+                    # 128x128
+                    nn.ConvTranspose2d(32, 16, 4, 2, 1),
+                    nn.BatchNorm2d(16),
+                    nn.ReLU(True),
+                    
+                    # 256x256
+                    nn.ConvTranspose2d(16, 8, 4, 2, 1),
+                    nn.BatchNorm2d(8),
+                    nn.ReLU(True),
+                    
+                    # 512x512
+                    nn.ConvTranspose2d(8, 3, 4, 2, 1),
+                    nn.Tanh()
+                )
+            
+            def forward(self, z):
+                z = z.view(z.size(0), -1, 1, 1)
+                return self.network(z)
+        
+        self.generator = DummyGenerator().to(self.device)
+    
+    def generate_from_noise(self,
+                           num_images: int = 10,
+                           truncation_psi: float = 0.7,
+                           noise_mode: str = 'random',
+                           seed: Optional[int] = None) -> List[Image.Image]:
+        """Generate images from random noise."""
+        
+        if self.generator is None:
+            raise RuntimeError("No generator loaded")
+        
+        if seed is not None:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+        
+        logger.info(f"Generating {num_images} images with StyleGAN2")
+        
+        images = []
+        
+        with torch.no_grad():
+            for i in range(num_images):
+                # Generate latent code
+                z = self._generate_latent_code(truncation_psi, noise_mode)
+                
+                # Generate image
+                try:
+                    if hasattr(self.generator, 'synthesis'):
+                        # Official StyleGAN2 interface
+                        img_tensor = self.generator.synthesis(z)
+                    else:
+                        # Simple generator interface
+                        img_tensor = self.generator(z)
+                    
+                    # Convert to PIL Image
+                    img = self._tensor_to_pil(img_tensor[0])
+                    images.append(img)
+                    
+                    if (i + 1) % 10 == 0:
+                        logger.info(f"Generated {i + 1}/{num_images} images")
+                        
+                except Exception as e:
+                    logger.error(f"Failed to generate image {i + 1}: {e}")
+                    continue
+        
+        return images
+    
+    def generate_with_style_mixing(self,
+                                  num_images: int = 10,
+                                  mixing_probability: float = 0.5,
+                                  truncation_psi: float = 0.7) -> List[Image.Image]:
+        """Generate images with style mixing for increased diversity."""
+        
+        if self.generator is None:
+            raise RuntimeError("No generator loaded")
+        
+        logger.info(f"Generating {num_images} images with style mixing")
+        
+        images = []
+        
+        with torch.no_grad():
+            for i in range(num_images):
+                # Generate two latent codes
+                z1 = self._generate_latent_code(truncation_psi, 'random')
+                z2 = self._generate_latent_code(truncation_psi, 'random')
+                
+                # Decide whether to mix styles
+                if np.random.random() < mixing_probability:
+                    # Mix styles at a random layer
+                    mixing_layer = np.random.randint(1, self.num_layers)
+                    z_mixed = self._mix_styles(z1, z2, mixing_layer)
+                else:
+                    z_mixed = z1
+                
+                # Generate image
+                try:
+                    if hasattr(self.generator, 'synthesis'):
+                        img_tensor = self.generator.synthesis(z_mixed)
+                    else:
+                        img_tensor = self.generator(z_mixed)
+                    
+                    img = self._tensor_to_pil(img_tensor[0])
+                    images.append(img)
+                    
+                except Exception as e:
+                    logger.error(f"Failed to generate mixed image {i + 1}: {e}")
+                    continue
+        
+        return images
+    
+    def generate_from_profile(self,
+                             profile_path: str,
+                             num_images: int = 10,
+                             adaptation_strength: float = 0.8) -> List[Image.Image]:
+        """Generate images conditioned on a distribution profile."""
+        
+        # Load profile
+        with open(profile_path, 'r') as f:
+            profile = json.load(f)
+        
+        # Extract generation guidance for GANs
+        guidance = profile.get('generation_guidance', {}).get('gan', {})
+        
+        # Use profile-specific parameters
+        truncation_psi = guidance.get('truncation_psi', 0.7)
+        style_mixing_prob = guidance.get('style_mixing_prob', 0.5)
+        
+        # Adjust truncation based on profile diversity
+        if 'diversity' in profile.get('distributions', {}):
+            diversity_info = profile['distributions']['diversity']
+            if 'diversity_score' in diversity_info:
+                diversity_score = diversity_info['diversity_score']
+                # Higher diversity -> less truncation
+                truncation_psi = max(0.3, truncation_psi * (1 - diversity_score * adaptation_strength))
+        
+        logger.info(f"Generating from profile with truncation_psi={truncation_psi:.3f}")
+        
+        return self.generate_with_style_mixing(
+            num_images=num_images,
+            mixing_probability=style_mixing_prob,
+            truncation_psi=truncation_psi
+        )
+    
+    def _generate_latent_code(self, truncation_psi: float, noise_mode: str) -> torch.Tensor:
+        """Generate a latent code."""
+        
+        if noise_mode == 'random':
+            z = torch.randn(1, self.latent_dim, device=self.device)
+        elif noise_mode == 'const':
+            z = torch.ones(1, self.latent_dim, device=self.device)
+        else:
+            z = torch.randn(1, self.latent_dim, device=self.device)
+        
+        # Apply truncation
+        if truncation_psi < 1.0:
+            z = z * truncation_psi
+        
+        return z
+    
+    def _mix_styles(self, z1: torch.Tensor, z2: torch.Tensor, mixing_layer: int) -> torch.Tensor:
+        """Mix two style codes at a specific layer."""
+        
+        # For simplified implementation, just interpolate
+        alpha = np.random.random()
+        z_mixed = alpha * z1 + (1 - alpha) * z2
+        
+        return z_mixed
+    
+    def _tensor_to_pil(self, tensor: torch.Tensor) -> Image.Image:
+        """Convert a tensor to PIL Image."""
+        
+        # Denormalize from [-1, 1] to [0, 1]
+        tensor = (tensor + 1) / 2
+        
+        # Clamp to valid range
+        tensor = torch.clamp(tensor, 0, 1)
+        
+        # Convert to numpy
+        if tensor.dim() == 3:  # CHW
+            tensor = tensor.permute(1, 2, 0)  # HWC
+        
+        numpy_img = tensor.cpu().numpy()
+        
+        # Convert to uint8
+        numpy_img = (numpy_img * 255).astype(np.uint8)
+        
+        # Create PIL Image
+        return Image.fromarray(numpy_img)
+    
+    def save_images(self, images: List[Image.Image], output_dir: str, prefix: str = "gan") -> List[str]:
+        """Save generated images to directory."""
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        saved_paths = []
+        
+        for i, image in enumerate(images):
+            filename = f"{prefix}_{i:04d}.png"
+            filepath = output_path / filename
+            
+            try:
+                image.save(filepath)
+                saved_paths.append(str(filepath))
+            except Exception as e:
+                logger.error(f"Failed to save image {filename}: {e}")
+        
+        logger.info(f"Saved {len(saved_paths)} GAN images to {output_dir}")
+        return saved_paths
+    
+    def interpolate_between_images(self,
+                                  num_steps: int = 10,
+                                  truncation_psi: float = 0.7) -> List[Image.Image]:
+        """Generate an interpolation sequence between two random points."""
+        
+        if self.generator is None:
+            raise RuntimeError("No generator loaded")
+        
+        # Generate two random latent codes
+        z1 = self._generate_latent_code(truncation_psi, 'random')
+        z2 = self._generate_latent_code(truncation_psi, 'random')
+        
+        images = []
+        
+        with torch.no_grad():
+            for i in range(num_steps):
+                # Interpolate between z1 and z2
+                alpha = i / (num_steps - 1)
+                z_interp = (1 - alpha) * z1 + alpha * z2
+                
+                # Generate image
+                try:
+                    if hasattr(self.generator, 'synthesis'):
+                        img_tensor = self.generator.synthesis(z_interp)
+                    else:
+                        img_tensor = self.generator(z_interp)
+                    
+                    img = self._tensor_to_pil(img_tensor[0])
+                    images.append(img)
+                    
+                except Exception as e:
+                    logger.error(f"Failed to generate interpolated image {i + 1}: {e}")
+                    continue
+        
+        return images
+    
+    def cleanup(self):
+        """Clean up GPU memory."""
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+if __name__ == "__main__":
+    # Test the GAN generator
+    try:
+        # Initialize with dummy generator for testing
+        generator = StyleGAN2Generator()
