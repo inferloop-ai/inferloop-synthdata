@@ -1,0 +1,137 @@
+# Orchestration Service Configuration
+
+service:
+  name: orchestration-service
+  version: 1.0.0
+  log_level: INFO
+  port: 8080
+  host: 0.0.0.0
+  workers: 4
+
+pipeline:
+  stages:
+    - id: ingestion
+      name: "Data Ingestion"
+      service: "ingestion-service"
+      endpoint: "/api/v1/ingest/start"
+      required: true
+      timeout_seconds: 3600
+      retry:
+        enabled: true
+        max_attempts: 3
+        backoff_factor: 2
+      
+    - id: metrics_extraction
+      name: "Metrics Extraction"
+      service: "metrics-extraction-service"
+      endpoint: "/api/v1/metrics/extract"
+      required: true
+      timeout_seconds: 1800
+      retry:
+        enabled: true
+        max_attempts: 2
+        backoff_factor: 2
+      
+    - id: generation
+      name: "Video Generation"
+      service: "generation-service"
+      endpoint: "/api/v1/generate/video"
+      required: true
+      timeout_seconds: 7200
+      retry:
+        enabled: true
+        max_attempts: 2
+        backoff_factor: 2
+      
+    - id: validation
+      name: "Quality Validation"
+      service: "validation-service"
+      endpoint: "/api/v1/validate"
+      required: true
+      timeout_seconds: 1800
+      retry:
+        enabled: true
+        max_attempts: 2
+        backoff_factor: 2
+      
+    - id: delivery
+      name: "Content Delivery"
+      service: "delivery-service"
+      endpoint: "/api/v1/deliver"
+      required: true
+      timeout_seconds: 3600
+      retry:
+        enabled: true
+        max_attempts: 3
+        backoff_factor: 2
+
+services:
+  ingestion:
+    url: "http://ingestion-service:8080"
+    health_endpoint: "/health"
+  
+  metrics:
+    url: "http://metrics-extraction-service:8080"
+    health_endpoint: "/health"
+  
+  generation:
+    url: "http://generation-service:8080"
+    health_endpoint: "/health"
+  
+  validation:
+    url: "http://validation-service:8080"
+    health_endpoint: "/health"
+  
+  delivery:
+    url: "http://delivery-service:8080"
+    health_endpoint: "/health"
+
+monitoring:
+  enabled: true
+  metrics_endpoint: "/metrics"
+  health_check_interval_seconds: 30
+  prometheus:
+    enabled: true
+    endpoint: "/metrics"
+  
+  alerts:
+    enabled: true
+    methods:
+      - email
+      - slack
+      - pagerduty
+    thresholds:
+      pipeline_failure_rate: 0.1
+      service_error_rate: 0.05
+      average_pipeline_duration_seconds: 7200
+
+storage:
+  pipeline_data_directory: "/data/pipelines"
+  max_pipeline_history: 1000
+  cleanup_after_days: 30
+
+verticals:
+  autonomous_vehicles:
+    default_config:
+      generation:
+        engine: "unreal"
+        scene_type: "autonomous_vehicles"
+      validation:
+        min_label_accuracy: 0.95
+  
+  robotics:
+    default_config:
+      generation:
+        engine: "unity"
+        scene_type: "robotics"
+      validation:
+        min_label_accuracy: 0.9
+  
+  healthcare:
+    default_config:
+      generation:
+        engine: "omniverse"
+        scene_type: "healthcare"
+      validation:
+        min_label_accuracy: 0.98
+        privacy_compliance: true

@@ -1,0 +1,42 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'orchestration-service'
+    static_configs:
+      - targets: ['orchestration-service:8080']
+    metrics_path: '/metrics'
+    
+  - job_name: 'ingestion-service'
+    static_configs:
+      - targets: ['ingestion-service:8080']
+    metrics_path: '/metrics'
+    
+  - job_name: 'metrics-extraction-service'
+    static_configs:
+      - targets: ['metrics-extraction-service:8080']
+    metrics_path: '/metrics'
+    
+  - job_name: 'generation-service'
+    static_configs:
+      - targets: ['generation-service:8080']
+    metrics_path: '/metrics'
+    
+  - job_name: 'validation-service'
+    static_configs:
+      - targets: ['validation-service:8080']
+    metrics_path: '/metrics'
+    
+  - job_name: 'delivery-service'
+    static_configs:
+      - targets: ['delivery-service:8080']
+    metrics_path: '/metrics'

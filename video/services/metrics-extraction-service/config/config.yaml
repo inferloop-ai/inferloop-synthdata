@@ -1,0 +1,132 @@
+# Metrics Extraction Service Configuration
+
+service:
+  name: metrics-extraction-service
+  version: 1.0.0
+  log_level: INFO
+  port: 8080
+  host: 0.0.0.0
+  workers: 4
+
+metrics:
+  available:
+    - id: quality
+      name: "Video Quality"
+      description: "General video quality metrics (PSNR, SSIM)"
+      computation_intensity: "medium"
+      default_enabled: true
+      
+    - id: objects
+      name: "Object Detection"
+      description: "Object detection and tracking metrics"
+      computation_intensity: "high"
+      default_enabled: true
+      
+    - id: motion
+      name: "Motion Analysis"
+      description: "Motion flow and stability analysis"
+      computation_intensity: "medium"
+      default_enabled: true
+      
+    - id: segmentation
+      name: "Segmentation Quality"
+      description: "Semantic segmentation quality metrics"
+      computation_intensity: "high"
+      default_enabled: false
+      
+    - id: lighting
+      name: "Lighting Analysis"
+      description: "Lighting consistency and quality"
+      computation_intensity: "low"
+      default_enabled: false
+      
+    - id: bias
+      name: "Bias Detection"
+      description: "Algorithmic bias detection in video content"
+      computation_intensity: "high"
+      default_enabled: true
+
+  models:
+    quality:
+      model_path: "/app/models/quality"
+      framework: "opencv"
+      version: "4.5"
+      
+    object_detection:
+      model_path: "/app/models/object_detection"
+      framework: "tensorflow"
+      version: "2.0"
+      
+    motion_analysis:
+      model_path: "/app/models/motion"
+      framework: "opencv"
+      version: "4.5"
+      
+    segmentation:
+      model_path: "/app/models/segmentation"
+      framework: "pytorch"
+      version: "1.8"
+      
+    lighting:
+      model_path: "/app/models/lighting"
+      framework: "custom"
+      version: "1.0"
+      
+    bias:
+      model_path: "/app/models/bias"
+      framework: "custom"
+      version: "1.0"
+
+storage:
+  input_directory: "/data/ingested"
+  output_directory: "/data/metrics"
+  cache_directory: "/data/cache/metrics"
+  max_cache_size_gb: 20
+
+processing:
+  frame_sampling:
+    default_mode: "uniform"  # uniform, adaptive, keyframe
+    default_rate: 5  # frames per second
+    keyframe_only: false
+    
+  batch_processing:
+    enabled: true
+    batch_size: 16
+    max_concurrent_batches: 4
+    
+  hardware_acceleration:
+    enabled: true
+    device: "cuda"  # cuda, cpu, tpu
+    memory_limit_mb: 4096
+
+verticals:
+  autonomous_vehicles:
+    additional_metrics:
+      - name: road_detection_accuracy
+        model_path: "/app/models/verticals/av/road_detection"
+      - name: traffic_sign_detection
+        model_path: "/app/models/verticals/av/traffic_signs"
+      - name: lane_tracking_stability
+        model_path: "/app/models/verticals/av/lane_tracking"
+        
+  robotics:
+    additional_metrics:
+      - name: depth_estimation_accuracy
+        model_path: "/app/models/verticals/robotics/depth"
+      - name: object_interaction_precision
+        model_path: "/app/models/verticals/robotics/interaction"
+        
+  healthcare:
+    additional_metrics:
+      - name: privacy_compliance
+        model_path: "/app/models/verticals/healthcare/privacy"
+      - name: medical_accuracy
+        model_path: "/app/models/verticals/healthcare/accuracy"
+
+reporting:
+  formats:
+    - json
+    - csv
+    - html
+  include_visualizations: true
+  max_stored_reports: 100

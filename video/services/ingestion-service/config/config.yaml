@@ -1,0 +1,111 @@
+# Ingestion Service Configuration
+
+service:
+  name: ingestion-service
+  version: 1.0.0
+  log_level: INFO
+  port: 8080
+  host: 0.0.0.0
+  workers: 4
+
+ingestion:
+  source_types:
+    - id: web
+      name: "Web Scraping"
+      description: "Scrape videos from websites"
+      enabled: true
+      required_config:
+        - url
+        - scraping_config
+      
+    - id: api
+      name: "External API"
+      description: "Fetch videos from external APIs"
+      enabled: true
+      required_config:
+        - url
+        - credentials
+        - api_config
+      
+    - id: upload
+      name: "Direct Upload"
+      description: "Upload video files directly"
+      enabled: true
+      required_config: []
+      
+    - id: stream
+      name: "Live Stream"
+      description: "Capture from live video streams"
+      enabled: true
+      required_config:
+        - stream_url
+        - duration
+        - credentials
+
+  supported_formats:
+    - mp4
+    - webm
+    - avi
+    - mov
+    - mkv
+
+storage:
+  output_directory: "/data/ingested"
+  temp_directory: "/tmp/ingestion"
+  max_file_size_gb: 10
+  
+processing:
+  validation:
+    enabled: true
+    check_format: true
+    check_resolution: true
+    check_duration: true
+    
+  preprocessing:
+    enabled: true
+    resize_resolution: null  # null means keep original
+    max_duration_seconds: 3600  # 1 hour
+    normalize_audio: true
+    
+  metadata_extraction:
+    enabled: true
+    extract_resolution: true
+    extract_duration: true
+    extract_codec: true
+    extract_framerate: true
+
+scraping:
+  user_agents:
+    - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Safari/605.1.15"
+  
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 10
+    
+  proxy:
+    enabled: false
+    rotation: true
+    proxy_list_path: "/app/config/proxies.txt"
+
+api_clients:
+  youtube:
+    enabled: true
+    api_key_env: "YOUTUBE_API_KEY"
+    quota_limit_daily: 10000
+    
+  vimeo:
+    enabled: true
+    client_id_env: "VIMEO_CLIENT_ID"
+    client_secret_env: "VIMEO_CLIENT_SECRET"
+    
+  custom:
+    enabled: true
+    config_path: "/app/config/custom_apis.json"
+
+quality_filters:
+  default:
+    min_resolution: "720p"
+    min_duration_seconds: 5
+    max_duration_seconds: 3600
+    required_formats: ["mp4", "webm"]

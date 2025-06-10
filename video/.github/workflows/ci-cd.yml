@@ -1,0 +1,217 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_PREFIX: enterprise-video-synthesis
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9, "3.10", "3.11"]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio pytest-cov pytest-mock
+    
+    - name: Run unit tests
+      run: |
+        pytest qa/test-suites/unit-tests/ -v --cov=services --cov-report=xml
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+    
+    - name: Install linting tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install black flake8 mypy isort
+    
+    - name: Run black
+      run: black --check services/
+    
+    - name: Run flake8
+      run: flake8 services/
+    
+    - name: Run isort
+      run: isort --check-only services/
+    
+    - name: Run mypy
+      run: mypy services/
+
+  build:
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.DOCKER_REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha
+    
+    - name: Build and push Docker images
+      run: |
+        services=("orchestration-service" "ingestion-service" "metrics-extraction-service" "generation-service" "validation-service" "delivery-service")
+        
+        for service in "${services[@]}"; do
+          echo "Building $service..."
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --tag ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/$service:${{ github.sha }} \
+            --tag ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/$service:latest \
+            --push \
+            ./services/$service
+        done
+
+  integration-test:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Compose
+      run: |
+        sudo apt-get update
+        sudo apt-get install docker-compose
+    
+    - name: Start services
+      run: |
+        docker-compose up -d
+        sleep 60
+    
+    - name: Run health checks
+      run: |
+        ./scripts/deployment/health-check.sh
+    
+    - name: Run integration tests
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pytest qa/test-suites/integration-tests/ -v
+    
+    - name: Cleanup
+      if: always()
+      run: |
+        docker-compose down -v
+
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  deploy-staging:
+    needs: [test, lint, build, integration-test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        # Add deployment commands here
+        # kubectl apply -f infrastructure/kubernetes/manifests/staging/
+    
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests on staging..."
+        # Add smoke test commands here
+
+  deploy-production:
+    needs: [test, lint, build, integration-test, security-scan]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Deploy to production
+      run: |
+        echo "Deploying to production environment..."
+        # Add production deployment commands here
+        # kubectl apply -f infrastructure/kubernetes/manifests/production/
+    
+    - name: Run post-deployment tests
+      run: |
+        echo "Running post-deployment verification..."
+        # Add verification commands here

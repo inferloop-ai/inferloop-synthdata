@@ -1,19 +1,19 @@
-# audio_synth/core/generators/vae.py
+# audio_synth/core/generators/vocoder.py
 """
-VAE-based Audio Generator
+Neural Vocoder for high-quality audio synthesis
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 import numpy as np
 
 from .base import BaseAudioGenerator
 from ..utils.config import GenerationConfig, AudioConfig
 
-class VAEAudioGenerator(BaseAudioGenerator):
-    """Variational Autoencoder for audio generation"""
+class VocoderGenerator(BaseAudioGenerator):
+    """Neural Vocoder for high-quality audio synthesis"""
     
     def __init__(self, config: GenerationConfig, audio_config: AudioConfig):
         super().__init__(config, audio_config)

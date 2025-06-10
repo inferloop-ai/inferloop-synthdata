@@ -1,0 +1,58 @@
+# Redis Cache Configuration for inferloop-synthdata/video
+
+# Redis Server Configuration
+redis:
+  host: "redis"
+  port: 6379
+  password: ""  # Set this in production
+  database: 0
+  ssl: false
+  timeout: 5  # seconds
+  connection_pool:
+    max_connections: 100
+    min_connections: 5
+
+# Cache Settings
+cache:
+  default_ttl: 3600  # seconds (1 hour)
+  key_prefix: "inferloop-video:"
+  serialization: "json"
+  compression: true
+  compression_threshold: 1024  # bytes
+
+# Cache Regions
+regions:
+  # Fast access for frequently used data
+  metadata:
+    ttl: 7200  # seconds (2 hours)
+    key_prefix: "metadata:"
+    max_size: 1000  # items
+    
+  # Generation results cache
+  generation:
+    ttl: 86400  # seconds (24 hours)
+    key_prefix: "generation:"
+    max_size: 500  # items
+    
+  # Validation results cache
+  validation:
+    ttl: 43200  # seconds (12 hours)
+    key_prefix: "validation:"
+    max_size: 500  # items
+    
+  # API responses cache
+  api:
+    ttl: 300  # seconds (5 minutes)
+    key_prefix: "api:"
+    max_size: 2000  # items
+
+# Eviction Policy
+eviction:
+  policy: "lru"  # least recently used
+  sample_size: 10
+
+# Monitoring
+monitoring:
+  enabled: true
+  stats_interval: 60  # seconds
+  prometheus_export: true

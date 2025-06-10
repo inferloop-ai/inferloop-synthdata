@@ -1,0 +1,102 @@
+# Validation Service Configuration
+
+service:
+  name: validation-service
+  version: 1.0.0
+  log_level: INFO
+  port: 8080
+  host: 0.0.0.0
+  workers: 4
+
+validation:
+  metrics:
+    - name: label_accuracy
+      description: "Accuracy of object detection and segmentation labels"
+      default_threshold: 0.92
+      critical: true
+      
+    - name: frame_lag
+      description: "Latency between frames in milliseconds"
+      default_threshold: 300.0
+      critical: true
+      
+    - name: psnr
+      description: "Peak Signal-to-Noise Ratio for image quality"
+      default_threshold: 25.0
+      critical: false
+      
+    - name: ssim
+      description: "Structural Similarity Index for perceptual quality"
+      default_threshold: 0.8
+      critical: false
+      
+    - name: bias_score
+      description: "Measure of demographic bias in generated content"
+      default_threshold: 0.1
+      critical: true
+
+  models:
+    object_detection:
+      model_path: "/app/models/object_detection"
+      framework: "tensorflow"
+      version: "2.0"
+      
+    segmentation:
+      model_path: "/app/models/segmentation"
+      framework: "pytorch"
+      version: "1.8"
+      
+    quality_assessment:
+      model_path: "/app/models/quality"
+      framework: "opencv"
+      version: "4.5"
+      
+    bias_detection:
+      model_path: "/app/models/bias"
+      framework: "custom"
+      version: "1.0"
+
+storage:
+  input_directory: "/data/generated"
+  output_directory: "/data/validated"
+  reports_directory: "/data/reports"
+  
+verticals:
+  autonomous_vehicles:
+    additional_metrics:
+      - name: road_detection_accuracy
+        default_threshold: 0.95
+        critical: true
+      - name: traffic_sign_detection
+        default_threshold: 0.9
+        critical: true
+      - name: lane_tracking_stability
+        default_threshold: 0.85
+        critical: true
+        
+  robotics:
+    additional_metrics:
+      - name: depth_estimation_accuracy
+        default_threshold: 0.9
+        critical: true
+      - name: object_interaction_precision
+        default_threshold: 0.85
+        critical: true
+        
+  healthcare:
+    additional_metrics:
+      - name: privacy_compliance
+        default_threshold: 1.0
+        critical: true
+      - name: medical_accuracy
+        default_threshold: 0.98
+        critical: true
+
+reporting:
+  formats:
+    - json
+    - html
+    - pdf
+  include_visualizations: true
+  store_failed_frames: true
+  max_stored_reports: 100

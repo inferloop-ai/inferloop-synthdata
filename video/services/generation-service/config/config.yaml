@@ -1,0 +1,111 @@
+# Generation Service Configuration
+
+service:
+  name: generation-service
+  version: 1.0.0
+  log_level: INFO
+  port: 8080
+  host: 0.0.0.0
+  workers: 4
+
+engines:
+  unreal:
+    version: "5.3"
+    executable_path: "/opt/unreal/UE_5.3/Engine/Binaries/Linux/UnrealEditor"
+    project_path: "/app/engines/unreal/SyntheticVideoProject.uproject"
+    templates:
+      - name: "urban_environment"
+        path: "/app/engines/unreal/templates/urban.json"
+      - name: "highway_scene"
+        path: "/app/engines/unreal/templates/highway.json"
+      - name: "indoor_scene"
+        path: "/app/engines/unreal/templates/indoor.json"
+    
+  unity:
+    version: "2023.2"
+    executable_path: "/opt/unity/2023.2/Editor/Unity"
+    project_path: "/app/engines/unity/SyntheticVideoProject"
+    templates:
+      - name: "autonomous_vehicle"
+        path: "/app/engines/unity/templates/av_scene.json"
+      - name: "robotics_environment"
+        path: "/app/engines/unity/templates/robotics.json"
+      - name: "smart_city"
+        path: "/app/engines/unity/templates/smart_city.json"
+    
+  omniverse:
+    version: "2023.1"
+    executable_path: "/opt/nvidia/omniverse/launcher"
+    project_path: "/app/engines/omniverse/SyntheticVideoProject.usd"
+    templates:
+      - name: "photorealistic_city"
+        path: "/app/engines/omniverse/templates/city.json"
+      - name: "factory_floor"
+        path: "/app/engines/omniverse/templates/factory.json"
+      - name: "medical_facility"
+        path: "/app/engines/omniverse/templates/medical.json"
+    
+  custom:
+    models:
+      - name: "diffusion_video"
+        path: "/app/engines/custom/diffusion_video"
+        type: "diffusion"
+      - name: "gan_video"
+        path: "/app/engines/custom/gan_video"
+        type: "gan"
+      - name: "neural_rendering"
+        path: "/app/engines/custom/neural_renderer"
+        type: "neural_rendering"
+
+storage:
+  output_directory: "/data/generated"
+  temp_directory: "/tmp/generation"
+  cache_directory: "/data/cache"
+  max_cache_size_gb: 50
+
+rendering:
+  default_resolution: "1920x1080"
+  default_fps: 30
+  max_duration_seconds: 600
+  quality_presets:
+    low:
+      samples_per_pixel: 16
+      max_bounces: 4
+      denoise: true
+    medium:
+      samples_per_pixel: 64
+      max_bounces: 8
+      denoise: true
+    high:
+      samples_per_pixel: 256
+      max_bounces: 16
+      denoise: true
+    ultra:
+      samples_per_pixel: 1024
+      max_bounces: 32
+      denoise: true
+
+verticals:
+  autonomous_vehicles:
+    default_engine: "unreal"
+    default_template: "highway_scene"
+    special_parameters:
+      - "traffic_density"
+      - "weather_conditions"
+      - "time_of_day"
+  
+  robotics:
+    default_engine: "unity"
+    default_template: "robotics_environment"
+    special_parameters:
+      - "obstacle_density"
+      - "lighting_conditions"
+      - "robot_type"
+  
+  smart_cities:
+    default_engine: "omniverse"
+    default_template: "photorealistic_city"
+    special_parameters:
+      - "population_density"
+      - "time_of_day"
+      - "weather_conditions"

@@ -1,0 +1,137 @@
+# Delivery Service Configuration
+
+service:
+  name: delivery-service
+  version: 1.0.0
+  log_level: INFO
+  port: 8080
+  host: 0.0.0.0
+  workers: 4
+
+delivery:
+  destinations:
+    - id: s3
+      name: "Amazon S3"
+      description: "Amazon Simple Storage Service"
+      enabled: true
+      required_config:
+        - bucket
+        - region
+        - access_key
+        - secret_key
+      
+    - id: azure_blob
+      name: "Azure Blob Storage"
+      description: "Microsoft Azure Blob Storage"
+      enabled: true
+      required_config:
+        - account
+        - container
+        - connection_string
+      
+    - id: gcs
+      name: "Google Cloud Storage"
+      description: "Google Cloud Storage buckets"
+      enabled: true
+      required_config:
+        - bucket
+        - project_id
+        - credentials_file
+      
+    - id: ftp
+      name: "FTP Server"
+      description: "File Transfer Protocol server"
+      enabled: true
+      required_config:
+        - host
+        - username
+        - password
+        - directory
+      
+    - id: http
+      name: "HTTP Endpoint"
+      description: "Custom HTTP/HTTPS endpoint"
+      enabled: true
+      required_config:
+        - url
+        - method
+        - headers
+      
+    - id: local
+      name: "Local Storage"
+      description: "Local file system storage"
+      enabled: true
+      required_config:
+        - directory
+
+  formats:
+    - id: mp4
+      name: "MP4"
+      description: "MPEG-4 Part 14 container format"
+      mime_type: "video/mp4"
+      extension: ".mp4"
+      default: true
+      
+    - id: webm
+      name: "WebM"
+      description: "WebM open media file format"
+      mime_type: "video/webm"
+      extension: ".webm"
+      default: false
+      
+    - id: avi
+      name: "AVI"
+      description: "Audio Video Interleave format"
+      mime_type: "video/x-msvideo"
+      extension: ".avi"
+      default: false
+
+  compression:
+    default_level: 5  # 1-10
+    codecs:
+      - id: h264
+        name: "H.264"
+        formats: ["mp4", "avi"]
+        default: true
+      - id: vp9
+        name: "VP9"
+        formats: ["webm"]
+        default: true
+      - id: h265
+        name: "H.265 (HEVC)"
+        formats: ["mp4"]
+        default: false
+
+storage:
+  input_directory: "/data/validated"
+  output_directory: "/data/delivered"
+  temp_directory: "/tmp/delivery"
+  
+metadata:
+  formats:
+    - json
+    - xml
+    - yaml
+  default_format: "json"
+  include_metrics: true
+  include_validation: true
+  include_generation_config: true
+
+security:
+  encryption:
+    enabled: false
+    algorithm: "AES-256"
+    key_management: "vault"
+  
+  access_control:
+    enabled: true
+    method: "token"
+    token_expiry_hours: 24
+
+notifications:
+  enabled: true
+  methods:
+    - email
+    - webhook
+    - slack
+  default_method: "webhook"

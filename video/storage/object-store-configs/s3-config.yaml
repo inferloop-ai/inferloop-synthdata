@@ -1,0 +1,80 @@
+# S3 Object Storage Configuration for inferloop-synthdata/video
+
+# AWS S3 Configuration
+s3:
+  region: "us-west-2"
+  endpoint: ""  # Leave empty for AWS S3, set for S3-compatible storage
+  access_key: "${AWS_ACCESS_KEY_ID}"  # Environment variable reference
+  secret_key: "${AWS_SECRET_ACCESS_KEY}"  # Environment variable reference
+  session_token: "${AWS_SESSION_TOKEN}"  # Optional, for temporary credentials
+  use_ssl: true
+  verify_ssl: true
+  signature_version: "s3v4"
+  addressing_style: "auto"  # "auto", "virtual", or "path"
+
+# Bucket Configuration
+buckets:
+  # Raw ingested data
+  ingestion:
+    name: "inferloop-video-ingestion"
+    region: "us-west-2"
+    versioning: true
+    lifecycle_rules:
+      - prefix: "temp/"
+        expiration_days: 1
+      - prefix: "raw/"
+        transition_to_glacier_days: 90
+    
+  # Generated video content
+  generation:
+    name: "inferloop-video-generation"
+    region: "us-west-2"
+    versioning: true
+    lifecycle_rules:
+      - prefix: "drafts/"
+        expiration_days: 7
+    
+  # Validated video content
+  validated:
+    name: "inferloop-video-validated"
+    region: "us-west-2"
+    versioning: true
+    
+  # Delivered video content
+  delivery:
+    name: "inferloop-video-delivery"
+    region: "us-west-2"
+    versioning: false
+    website:
+      enabled: true
+      index_document: "index.html"
+      error_document: "error.html"
+    cors:
+      allowed_origins: ["*"]
+      allowed_methods: ["GET"]
+      allowed_headers: ["*"]
+      max_age_seconds: 3600
+
+# Access Control
+access_control:
+  default_acl: "private"
+  public_access_block: true
+  
+# Transfer Configuration
+transfer:
+  multipart_threshold: 8388608  # 8 MB
+  multipart_chunksize: 8388608  # 8 MB
+  max_concurrency: 10
+  use_threads: true
+
+# Encryption
+encryption:
+  enabled: true
+  type: "AES256"  # "AES256" or "aws:kms"
+  kms_key_id: ""  # Only needed for "aws:kms"
+
+# Monitoring
+monitoring:
+  enabled: true
+  metrics_enabled: true
+  request_logging: true
