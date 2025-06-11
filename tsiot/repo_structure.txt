@@ -1,0 +1,605 @@
+tsiot/
+├── 🚀 cmd/                           # Entry points & executables
+│   ├── 🖥️  server/                   # Main MCP server
+│   │   ├── main.go
+│   │   ├── flags.go                  # Command line flags
+│   │   └── version.go                # Version info
+│   ├── 🔧 cli/                       # CLI tools & utilities
+│   │   ├── main.go
+│   │   ├── commands/
+│   │   │   ├── generate.go
+│   │   │   ├── validate.go
+│   │   │   ├── analyze.go
+│   │   │   └── migrate.go
+│   │   └── config/
+│   │       └── cli_config.go
+│   └── 👷 worker/                    # Background workers
+│       ├── main.go
+│       ├── scheduler.go
+│       └── job_processor.go
+├── 
+├── 🔧 internal/                      # Private application code
+│   ├── 🏗️  server/                   # Core server logic
+│   │   ├── server.go
+│   │   ├── config.go
+│   │   ├── handlers.go
+│   │   ├── middleware.go
+│   │   └── router.go
+│   ├── 
+│   ├── 🤖 agents/                    # MCP intelligent agents
+│   │   ├── base/                     # Base agent interfaces
+│   │   │   ├── agent.go
+│   │   │   ├── lifecycle.go
+│   │   │   └── communication.go
+│   │   ├── timeseries_agent.go       # Time series analysis
+│   │   ├── generation_agent.go       # Synthetic data generation
+│   │   ├── validation_agent.go       # Quality validation
+│   │   ├── privacy_agent.go          # Privacy enforcement
+│   │   ├── anomaly_agent.go          # Anomaly detection
+│   │   ├── forecasting_agent.go      # Predictive analytics
+│   │   └── coordinator.go            # Agent orchestration
+│   ├── 
+│   ├── 🔬 generators/                # Synthetic data generators
+│   │   ├── 🧠 timegan/               # TimeGAN implementation
+│   │   │   ├── timegan.go
+│   │   │   ├── discriminator.go
+│   │   │   ├── generator.go
+│   │   │   ├── embedder.go
+│   │   │   └── recovery.go
+│   │   ├── 📈 arima/                 # ARIMA models
+│   │   │   ├── arima.go
+│   │   │   ├── forecasting.go
+│   │   │   ├── seasonality.go
+│   │   │   └── trend_analysis.go
+│   │   ├── 🔗 rnn/                   # Recurrent Neural Networks
+│   │   │   ├── lstm.go
+│   │   │   ├── gru.go
+│   │   │   ├── attention.go
+│   │   │   └── encoder_decoder.go
+│   │   ├── 📊 statistical/           # Statistical generators
+│   │   │   ├── gaussian.go
+│   │   │   ├── markov_chain.go
+│   │   │   ├── fourier.go
+│   │   │   └── wavelets.go
+│   │   └── 🔐 ydata/                 # YData privacy-preserving
+│   │       ├── privacy_preserving.go
+│   │       ├── differential_privacy.go
+│   │       ├── federated_learning.go
+│   │       └── secure_aggregation.go
+│   ├── 
+│   ├── ⚙️  processors/               # Data processing pipeline
+│   │   ├── stream/                   # Stream processing
+│   │   │   ├── stream_processor.go
+│   │   │   ├── windowing.go
+│   │   │   ├── aggregation.go
+│   │   │   └── filtering.go
+│   │   ├── batch/                    # Batch processing
+│   │   │   ├── batch_processor.go
+│   │   │   ├── chunking.go
+│   │   │   └── parallel_processing.go
+│   │   ├── feature_engineering.go
+│   │   ├── normalization.go
+│   │   ├── interpolation.go
+│   │   └── resampling.go
+│   ├── 
+│   ├── 💾 storage/                   # Storage abstractions
+│   │   ├── interfaces/
+│   │   │   ├── timeseries.go
+│   │   │   ├── vector.go
+│   │   │   ├── blob.go
+│   │   │   └── cache.go
+│   │   ├── implementations/
+│   │   │   ├── influxdb/
+│   │   │   │   ├── client.go
+│   │   │   │   ├── queries.go
+│   │   │   │   └── migrations.go
+│   │   │   ├── timescaledb/
+│   │   │   │   ├── client.go
+│   │   │   │   ├── schemas.go
+│   │   │   │   └── partitioning.go
+│   │   │   ├── weaviate/
+│   │   │   │   ├── client.go
+│   │   │   │   ├── schema.go
+│   │   │   │   └── vector_ops.go
+│   │   │   ├── s3/
+│   │   │   │   ├── client.go
+│   │   │   │   ├── multipart.go
+│   │   │   │   └── lifecycle.go
+│   │   │   └── redis/
+│   │   │       ├── client.go
+│   │   │       ├── clustering.go
+│   │   │       └── streams.go
+│   │   └── migrations/
+│   │       ├── migration_manager.go
+│   │       └── versions/
+│   ├── 
+│   ├── 🌐 protocols/                 # Communication protocols
+│   │   ├── 📡 mqtt/                  # MQTT messaging
+│   │   │   ├── client.go
+│   │   │   ├── publisher.go
+│   │   │   ├── subscriber.go
+│   │   │   ├── retained_messages.go
+│   │   │   └── last_will.go
+│   │   ├── 🚀 kafka/                 # Apache Kafka
+│   │   │   ├── producer.go
+│   │   │   ├── consumer.go
+│   │   │   ├── streams.go
+│   │   │   ├── admin.go
+│   │   │   └── schema_registry.go
+│   │   ├── 🔗 grpc/                  # gRPC services
+│   │   │   ├── server.go
+│   │   │   ├── client.go
+│   │   │   ├── interceptors.go
+│   │   │   └── protos/
+│   │   │       ├── timeseries.proto
+│   │   │       ├── generation.proto
+│   │   │       └── validation.proto
+│   │   └── 🔌 mcp/                   # Model Context Protocol
+│   │       ├── mcp_client.go
+│   │       ├── mcp_server.go
+│   │       ├── transport.go
+│   │       ├── message_handler.go
+│   │       └── resource_manager.go
+│   ├── 
+│   ├── ✅ validation/                # Data quality validation
+│   │   ├── metrics/
+│   │   │   ├── quality_metrics.go
+│   │   │   ├── trend_similarity.go
+│   │   │   ├── autocorrelation.go
+│   │   │   ├── cross_correlation.go
+│   │   │   └── entropy_measures.go
+│   │   ├── tests/
+│   │   │   ├── statistical_tests.go
+│   │   │   ├── kolmogorov_smirnov.go
+│   │   │   ├── anderson_darling.go
+│   │   │   └── ljung_box.go
+│   │   ├── reports/
+│   │   │   ├── quality_report.go
+│   │   │   ├── comparison_report.go
+│   │   │   └── visualization.go
+│   │   └── rules/
+│   │       ├── rule_engine.go
+│   │       ├── custom_rules.go
+│   │       └── predefined_rules.go
+│   ├── 
+│   ├── 🔐 privacy/                   # Privacy mechanisms
+│   │   ├── differential_privacy.go
+│   │   ├── anonymization.go
+│   │   ├── k_anonymity.go
+│   │   ├── l_diversity.go
+│   │   ├── t_closeness.go
+│   │   ├── data_masking.go
+│   │   ├── synthetic_identifiers.go
+│   │   └── privacy_budget.go
+│   ├── 
+│   ├── 🌍 api/                       # REST API layer
+│   │   ├── 🎯 handlers/              # Request handlers
+│   │   │   ├── health.go
+│   │   │   ├── timeseries.go
+│   │   │   ├── generation.go
+│   │   │   ├── validation.go
+│   │   │   ├── agents.go
+│   │   │   ├── workflows.go
+│   │   │   └── analytics.go
+│   │   ├── 🛡️  middleware/           # HTTP middleware
+│   │   │   ├── auth.go
+│   │   │   ├── rate_limiting.go
+│   │   │   ├── logging.go
+│   │   │   ├── cors.go
+│   │   │   ├── compression.go
+│   │   │   └── security.go
+│   │   ├── 🎨 responses/             # Response formatters
+│   │   │   ├── json.go
+│   │   │   ├── csv.go
+│   │   │   ├── parquet.go
+│   │   │   └── streaming.go
+│   │   ├── routes.go
+│   │   ├── swagger.go
+│   │   └── versioning.go
+│   ├── 
+│   ├── 📦 sdk/                       # Client SDKs
+│   │   ├── 🐹 go/                    # Go SDK
+│   │   │   ├── client.go
+│   │   │   ├── timeseries.go
+│   │   │   ├── generators.go
+│   │   │   ├── validators.go
+│   │   │   └── examples/
+│   │   ├── 🐍 python/                # Python SDK
+│   │   │   ├── __init__.py
+│   │   │   ├── client.py
+│   │   │   ├── timeseries.py
+│   │   │   ├── generators.py
+│   │   │   ├── validators.py
+│   │   │   ├── utils.py
+│   │   │   └── examples/
+│   │   ├── 🟨 javascript/            # JavaScript SDK
+│   │   │   ├── index.js
+│   │   │   ├── client.js
+│   │   │   ├── timeseries.js
+│   │   │   ├── generators.js
+│   │   │   ├── package.json
+│   │   │   └── examples/
+│   │   └── 🏠 rust/                  # Rust SDK
+│   │       ├── Cargo.toml
+│   │       ├── src/
+│   │       │   ├── lib.rs
+│   │       │   ├── client.rs
+│   │       │   ├── timeseries.rs
+│   │       │   └── generators.rs
+│   │       └── examples/
+│   ├── 
+│   ├── 📊 observability/             # Monitoring & observability
+│   │   ├── metrics/
+│   │   │   ├── prometheus.go
+│   │   │   ├── custom_metrics.go
+│   │   │   └── dashboards/
+│   │   ├── tracing/
+│   │   │   ├── jaeger.go
+│   │   │   ├── opentelemetry.go
+│   │   │   └── spans.go
+│   │   ├── logging/
+│   │   │   ├── structured.go
+│   │   │   ├── formatters.go
+│   │   │   └── aggregation.go
+│   │   ├── alerting/
+│   │   │   ├── rules.go
+│   │   │   ├── notifications.go
+│   │   │   └── escalation.go
+│   │   └── health/
+│   │       ├── checks.go
+│   │       ├── dependencies.go
+│   │       └── status.go
+│   ├── 
+│   ├── 🔄 workflows/                 # Workflow orchestration
+│   │   ├── engines/
+│   │   │   ├── temporal.go
+│   │   │   ├── argo.go
+│   │   │   └── cadence.go
+│   │   ├── activities/
+│   │   │   ├── data_ingestion.go
+│   │   │   ├── generation.go
+│   │   │   ├── validation.go
+│   │   │   └── export.go
+│   │   ├── workflows/
+│   │   │   ├── synthetic_pipeline.go
+│   │   │   ├── batch_generation.go
+│   │   │   └── real_time_streaming.go
+│   │   └── schedulers/
+│   │       ├── cron_scheduler.go
+│   │       ├── event_scheduler.go
+│   │       └── priority_queue.go
+│   └── 
+│   └── 🛠️  utils/                    # Utility functions
+│       ├── math/
+│       │   ├── statistics.go
+│       │   ├── linear_algebra.go
+│       │   ├── fft.go
+│       │   └── interpolation.go
+│       ├── time/
+│       │   ├── parsing.go
+│       │   ├── formatting.go
+│       │   ├── timezone.go
+│       │   └── business_calendar.go
+│       ├── validation/
+│       │   ├── schema.go
+│       │   ├── constraints.go
+│       │   └── sanitization.go
+│       ├── encoding/
+│       │   ├── compression.go
+│       │   ├── serialization.go
+│       │   └── encryption.go
+│       └── concurrent/
+│           ├── pools.go
+│           ├── channels.go
+│           └── context.go
+├── 
+├── 📦 pkg/                           # Public packages (importable)
+│   ├── 📊 models/                    # Data models & schemas
+│   │   ├── timeseries.go
+│   │   ├── sensor_data.go
+│   │   ├── metadata.go
+│   │   ├── generation_params.go
+│   │   ├── validation_results.go
+│   │   ├── privacy_config.go
+│   │   └── agent_config.go
+│   ├── 🚨 errors/                    # Error types & handling
+│   │   ├── errors.go
+│   │   ├── validation_errors.go
+│   │   ├── generation_errors.go
+│   │   ├── storage_errors.go
+│   │   └── network_errors.go
+│   ├── 📋 constants/                 # Application constants
+│   │   ├── constants.go
+│   │   ├── mime_types.go
+│   │   ├── status_codes.go
+│   │   └── default_values.go
+│   └── 🔧 interfaces/                # Public interfaces
+│       ├── generator.go
+│       ├── validator.go
+│       ├── processor.go
+│       └── storage.go
+├── 
+├── 🚀 deployments/                   # Deployment configurations
+│   ├── ☸️  kubernetes/               # Kubernetes manifests
+│   │   ├── base/
+│   │   │   ├── namespace.yaml
+│   │   │   ├── configmap.yaml
+│   │   │   ├── secrets.yaml
+│   │   │   ├── deployment.yaml
+│   │   │   ├── service.yaml
+│   │   │   ├── ingress.yaml
+│   │   │   └── rbac.yaml
+│   │   ├── overlays/
+│   │   │   ├── development/
+│   │   │   ├── staging/
+│   │   │   └── production/
+│   │   └── monitoring/
+│   │       ├── prometheus.yaml
+│   │       ├── grafana.yaml
+│   │       └── alertmanager.yaml
+│   ├── ⛵ helm/                      # Helm charts
+│   │   ├── Chart.yaml
+│   │   ├── Chart.lock
+│   │   ├── values.yaml
+│   │   ├── values-dev.yaml
+│   │   ├── values-prod.yaml
+│   │   └── templates/
+│   │       ├── deployment.yaml
+│   │       ├── service.yaml
+│   │       ├── configmap.yaml
+│   │       ├── secrets.yaml
+│   │       ├── ingress.yaml
+│   │       ├── serviceaccount.yaml
+│   │       └── _helpers.tpl
+│   ├── 🐳 docker/                    # Docker configurations
+│   │   ├── Dockerfile.server
+│   │   ├── Dockerfile.worker
+│   │   ├── Dockerfile.cli
+│   │   ├── docker-compose.yml
+│   │   ├── docker-compose.dev.yml
+│   │   └── .dockerignore
+│   ├── 🏗️  terraform/                # Infrastructure as Code
+│   │   ├── environments/
+│   │   │   ├── dev/
+│   │   │   ├── staging/
+│   │   │   └── prod/
+│   │   ├── modules/
+│   │   │   ├── vpc/
+│   │   │   ├── eks/
+│   │   │   ├── rds/
+│   │   │   └── monitoring/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   ├── outputs.tf
+│   │   └── versions.tf
+│   └── 🌩️  pulumi/                   # Alternative IaC
+│       ├── Pulumi.yaml
+│       ├── Pulumi.dev.yaml
+│       ├── Pulumi.prod.yaml
+│       └── index.ts
+├── 
+├── ⚙️  configs/                      # Configuration files
+│   ├── 📋 schemas/                   # Config schemas
+│   │   ├── server.schema.json
+│   │   ├── agent.schema.json
+│   │   └── generator.schema.json
+│   ├── environments/
+│   │   ├── default.yaml
+│   │   ├── development.yaml
+│   │   ├── staging.yaml
+│   │   ├── production.yaml
+│   │   └── test.yaml
+│   ├── logging/
+│   │   ├── logback.xml
+│   │   └── log4j2.xml
+│   └── monitoring/
+│       ├── prometheus.yml
+│       ├── grafana-dashboard.json
+│       └── alert-rules.yml
+├── 
+├── 🔨 scripts/                       # Build & deployment scripts
+│   ├── 🏗️  build/                    # Build scripts
+│   │   ├── build.sh
+│   │   ├── build-docker.sh
+│   │   ├── build-multi-arch.sh
+│   │   └── version.sh
+│   ├── 🚀 deploy/                    # Deployment scripts
+│   │   ├── deploy.sh
+│   │   ├── deploy-k8s.sh
+│   │   ├── deploy-helm.sh
+│   │   └── rollback.sh
+│   ├── 🧪 test/                      # Test scripts
+│   │   ├── test.sh
+│   │   ├── test-integration.sh
+│   │   ├── test-performance.sh
+│   │   └── test-e2e.sh
+│   ├── 📊 data/                      # Data scripts
+│   │   ├── generate-sample-data.sh
+│   │   ├── migrate-data.sh
+│   │   ├── backup-data.sh
+│   │   └── restore-data.sh
+│   ├── 🔧 dev/                       # Development scripts
+│   │   ├── setup-dev.sh
+│   │   ├── install-deps.sh
+│   │   ├── format-code.sh
+│   │   └── lint.sh
+│   └── 🧹 maintenance/               # Maintenance scripts
+│       ├── cleanup.sh
+│       ├── health-check.sh
+│       ├── log-rotation.sh
+│       └── metrics-export.sh
+├── 
+├── 📚 docs/                          # Documentation
+│   ├── 🏗️  architecture/             # Architecture docs
+│   │   ├── overview.md
+│   │   ├── design-decisions.md
+│   │   ├── data-flow.md
+│   │   ├── security.md
+│   │   └── scalability.md
+│   ├── 🌐 api/                       # API documentation
+│   │   ├── openapi.yaml
+│   │   ├── swagger-ui/
+│   │   ├── postman/
+│   │   │   └── collection.json
+│   │   └── examples/
+│   │       ├── curl-examples.sh
+│   │       └── response-samples.json
+│   ├── 🚀 deployment/                # Deployment guides
+│   │   ├── quick-start.md
+│   │   ├── kubernetes-guide.md
+│   │   ├── docker-guide.md
+│   │   ├── monitoring-setup.md
+│   │   └── troubleshooting.md
+│   ├── 👥 user-guide/                # User documentation
+│   │   ├── getting-started.md
+│   │   ├── tutorials/
+│   │   │   ├── basic-usage.md
+│   │   │   ├── advanced-features.md
+│   │   │   └── best-practices.md
+│   │   ├── cli-reference.md
+│   │   ├── sdk-guides/
+│   │   │   ├── go-sdk.md
+│   │   │   ├── python-sdk.md
+│   │   │   └── javascript-sdk.md
+│   │   └── faq.md
+│   ├── 🧑‍💻 developer/                 # Developer docs
+│   │   ├── contributing.md
+│   │   ├── code-style.md
+│   │   ├── testing-guide.md
+│   │   ├── debugging.md
+│   │   └── performance-tuning.md
+│   └── 📊 examples/                  # Example configurations
+│       ├── use-cases/
+│       ├── configurations/
+│       └── workflows/
+├── 
+├── 🧪 tests/                         # Test suites
+│   ├── 🔬 unit/                      # Unit tests
+│   │   ├── agents/
+│   │   ├── generators/
+│   │   ├── processors/
+│   │   ├── storage/
+│   │   ├── validation/
+│   │   └── utils/
+│   ├── 🔗 integration/               # Integration tests
+│   │   ├── api/
+│   │   ├── storage/
+│   │   ├── messaging/
+│   │   └── end-to-end/
+│   ├── 🌐 e2e/                       # End-to-end tests
+│   │   ├── scenarios/
+│   │   ├── fixtures/
+│   │   └── scripts/
+│   ├── 📊 benchmarks/                # Performance tests
+│   │   ├── load/
+│   │   ├── stress/
+│   │   ├── memory/
+│   │   └── cpu/
+│   ├── 🎭 mocks/                     # Test mocks
+│   │   ├── storage/
+│   │   ├── messaging/
+│   │   └── external-services/
+│   ├── 🏭 fixtures/                  # Test data
+│   │   ├── timeseries/
+│   │   ├── configs/
+│   │   └── schemas/
+│   └── helpers/                      # Test utilities
+│       ├── setup.go
+│       ├── cleanup.go
+│       └── assertions.go
+├── 
+├── 🔬 examples/                      # Example implementations
+│   ├── 📡 mqtt-client/               # MQTT examples
+│   │   ├── publisher/
+│   │   ├── subscriber/
+│   │   └── README.md
+│   ├── 🚀 kafka-producer/            # Kafka examples
+│   │   ├── producer/
+│   │   ├── consumer/
+│   │   ├── streams/
+│   │   └── README.md
+│   ├── 🐍 python-sdk/                # Python SDK examples
+│   │   ├── basic_usage.py
+│   │   ├── advanced_features.py
+│   │   ├── batch_generation.py
+│   │   ├── streaming_data.py
+│   │   └── README.md
+│   ├── 📓 jupyter-notebooks/         # Jupyter examples
+│   │   ├── getting-started.ipynb
+│   │   ├── time-series-analysis.ipynb
+│   │   ├── synthetic-data-quality.ipynb
+│   │   ├── privacy-preservation.ipynb
+│   │   └── advanced-techniques.ipynb
+│   ├── 🌐 web-dashboard/             # Web UI examples
+│   │   ├── src/
+│   │   ├── public/
+│   │   ├── package.json
+│   │   └── README.md
+│   └── 🔧 cli-examples/              # CLI usage examples
+│       ├── basic-commands.sh
+│       ├── advanced-workflows.sh
+│       └── automation-scripts.sh
+├── 
+├── 🛠️  tools/                        # Development & utility tools
+│   ├── 🎯 code-generator/            # Code generation tools
+│   │   ├── templates/
+│   │   ├── generator.go
+│   │   ├── config.yaml
+│   │   └── README.md
+│   ├── 📊 test-data-generator/       # Test data generation
+│   │   ├── generators/
+│   │   ├── schemas/
+│   │   ├── main.go
+│   │   └── README.md
+│   ├── 🔄 migration-scripts/         # Database migrations
+│   │   ├── up/
+│   │   ├── down/
+│   │   ├── migrate.go
+│   │   └── README.md
+│   ├── 📈 benchmarking/              # Performance benchmarking
+│   │   ├── scenarios/
+│   │   ├── reports/
+│   │   ├── benchmark.go
+│   │   └── README.md
+│   ├── 🔍 profiling/                 # Performance profiling
+│   │   ├── cpu/
+│   │   ├── memory/
+│   │   ├── network/
+│   │   └── README.md
+│   └── 🧹 cleanup/                   # Cleanup utilities
+│       ├── log-cleanup.go
+│       ├── data-cleanup.go
+│       └── README.md
+├── 
+├── 🌐 web/                           # Web interfaces (optional)
+│   ├── dashboard/                    # Management dashboard
+│   │   ├── src/
+│   │   ├── public/
+│   │   ├── package.json
+│   │   └── README.md
+│   └── monitoring/                   # Monitoring UI
+│       ├── grafana-dashboards/
+│       └── custom-ui/
+├── 
+├── 📄 go.mod                         # Go module definition
+├── 📄 go.sum                         # Go module checksums
+├── 🔨 Makefile                       # Build automation
+├── 📖 README.md                      # Project documentation
+├── 📜 LICENSE                        # License file
+├── 🚫 .gitignore                     # Git ignore rules
+├── 🐳 .dockerignore                  # Docker ignore rules
+├── 🔧 .golangci.yml                  # Go linting configuration
+├── 🧪 .github/                       # GitHub workflows
+│   ├── workflows/
+│   │   ├── ci.yml
+│   │   ├── cd.yml
+│   │   ├── security.yml
+│   │   └── release.yml
+│   ├── ISSUE_TEMPLATE/
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── dependabot.yml
+└── 📊 .vscode/                       # VS Code configuration
+    ├── settings.json
+    ├── tasks.json
+    ├── launch.json
+    └── extensions.json

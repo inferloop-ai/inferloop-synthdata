@@ -1,0 +1,213 @@
+# Production environment configuration
+# High performance, security-focused configuration
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: "60s"
+  write_timeout: "60s"
+  idle_timeout: "300s"
+  enable_tls: true
+  tls_cert_file: "/etc/ssl/certs/tsiot-prod.crt"
+  tls_key_file: "/etc/ssl/private/tsiot-prod.key"
+  cors:
+    enabled: true
+    allowed_origins:
+      - "https://tsiot.example.com"
+      - "https://admin.tsiot.example.com"
+      - "https://api.tsiot.example.com"
+
+mcp:
+  enabled: true
+  transport: "websocket"
+  websocket_path: "/mcp"
+  max_message_size: 4194304  # 4MB for large datasets
+
+storage:
+  backend: "timescaledb"  # Use TimescaleDB for production scale
+  connection_string: "${TIMESCALEDB_URL}"
+  database: "tsiot_production"
+  retention_policy: "90d"
+  batch_size: 5000
+  timeout: "120s"
+
+generators:
+  timegan:
+    enabled: true
+    model_path: "/opt/tsiot/models/timegan/production"
+    default_params:
+      epochs: 2000  # Full training for production quality
+      batch_size: 128
+      hidden_dim: 64
+      num_layers: 6
+  
+  arima:
+    enabled: true
+    default_order: [3, 1, 3]
+    seasonal: true
+  
+  rnn:
+    enabled: true
+    model_type: "lstm"
+    default_params:
+      hidden_size: 256
+      num_layers: 4
+      dropout: 0.2
+  
+  statistical:
+    enabled: true
+    methods: ["gaussian", "markov", "fourier", "wavelet"]
+  
+  ydata:
+    enabled: true
+    privacy_budget: 0.5  # Stricter privacy for production
+    epsilon: 0.5
+    delta: 0.000001
+
+validation:
+  enabled: true
+  default_metrics: ["basic", "statistical", "temporal", "distribution", "privacy"]
+  quality_threshold: 0.9  # High quality threshold for production
+  statistical_tests: ["ks", "anderson", "ljung_box", "adf"]
+
+observability:
+  metrics:
+    enabled: true
+    port: 9090
+    path: "/metrics"
+  tracing:
+    enabled: true
+    provider: "jaeger"
+    endpoint: "${JAEGER_ENDPOINT}"
+    service_name: "tsiot-server-production"
+
+logging:
+  level: "warn"  # Reduce log volume in production
+  format: "json"
+  output: "stdout"
+  file:
+    enabled: true
+    path: "/var/log/tsiot/production-server.log"
+    max_size: "500MB"
+    max_age: "90d"
+    max_backups: 30
+
+security:
+  authentication:
+    enabled: true
+    method: "jwt"
+    jwt_secret: "${JWT_SECRET}"
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 1000
+    burst: 2000
+
+# Production-specific configuration
+production:
+  high_availability: true
+  auto_scaling: true
+  disaster_recovery: true
+  backup_strategy: "continuous"
+  monitoring_level: "comprehensive"
+
+# High availability configuration
+ha:
+  replicas: 3
+  load_balancer: true
+  health_check_interval: "10s"
+  failover_timeout: "30s"
+
+# Auto-scaling configuration
+auto_scaling:
+  enabled: true
+  min_replicas: 2
+  max_replicas: 10
+  cpu_threshold: 70
+  memory_threshold: 80
+  scale_up_cooldown: "5m"
+  scale_down_cooldown: "15m"
+
+# External service configuration (production)
+external_services:
+  timescaledb:
+    url: "${TIMESCALEDB_URL}"
+    username: "${TIMESCALEDB_USERNAME}"
+    password: "${TIMESCALEDB_PASSWORD}"
+    ssl: true
+    pool_size: 20
+    max_connections: 100
+  
+  redis:
+    url: "${REDIS_URL}"
+    password: "${REDIS_PASSWORD}"
+    ssl: true
+    cluster: true
+  
+  jaeger:
+    endpoint: "${JAEGER_ENDPOINT}"
+    username: "${JAEGER_USERNAME}"
+    password: "${JAEGER_PASSWORD}"
+    sampling_rate: 0.1  # Sample 10% of traces
+
+# Resource limits (production)
+resources:
+  max_memory: "16GB"
+  max_cpu: 8.0
+  max_disk: "1TB"
+  max_concurrent_requests: 5000
+  max_workers: 50
+
+# Performance optimization
+performance:
+  connection_pooling: true
+  caching: true
+  cache_ttl: "1h"
+  compression: true
+  keep_alive: true
+
+# Backup and disaster recovery
+backup:
+  enabled: true
+  strategy: "continuous"
+  retention: "1y"
+  compression: true
+  encryption: true
+  destinations:
+    - "s3://tsiot-backups-primary"
+    - "s3://tsiot-backups-secondary"
+
+# Monitoring and alerting
+monitoring:
+  prometheus:
+    scrape_interval: "15s"
+    retention: "30d"
+  alertmanager:
+    enabled: true
+    webhook_url: "${ALERTMANAGER_WEBHOOK}"
+  grafana:
+    enabled: true
+    dashboard_url: "${GRAFANA_URL}"
+
+# Security hardening
+security_hardening:
+  tls_min_version: "1.2"
+  cipher_suites: "secure"
+  hsts: true
+  csp: true
+  api_key_rotation: "30d"
+  audit_logging: true
+
+# Compliance
+compliance:
+  gdpr: true
+  hipaa: false
+  sox: false
+  audit_trail: true
+  data_residency: "eu-west-1"
+
+# Feature flags (production)
+feature_flags:
+  new_generator_algorithms: false  # Conservative in production
+  enhanced_validation: true
+  advanced_analytics: true
+  experimental_features: false

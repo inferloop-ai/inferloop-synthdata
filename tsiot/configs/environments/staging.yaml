@@ -1,0 +1,161 @@
+# Staging environment configuration
+# Production-like environment for final testing
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: "30s"
+  write_timeout: "30s"
+  idle_timeout: "120s"
+  enable_tls: true
+  tls_cert_file: "/etc/ssl/certs/tsiot-staging.crt"
+  tls_key_file: "/etc/ssl/private/tsiot-staging.key"
+  cors:
+    enabled: true
+    allowed_origins:
+      - "https://staging.tsiot.example.com"
+      - "https://staging-admin.tsiot.example.com"
+
+mcp:
+  enabled: true
+  transport: "websocket"
+  websocket_path: "/mcp"
+  max_message_size: 2097152  # 2MB
+
+storage:
+  backend: "influxdb"
+  connection_string: "${INFLUXDB_URL}"
+  database: "tsiot_staging"
+  retention_policy: "14d"
+  batch_size: 2000
+  timeout: "60s"
+
+generators:
+  timegan:
+    enabled: true
+    model_path: "/opt/tsiot/models/timegan"
+    default_params:
+      epochs: 500  # Moderate training time
+      batch_size: 64
+      hidden_dim: 48
+      num_layers: 4
+  
+  arima:
+    enabled: true
+    default_order: [2, 1, 2]
+    seasonal: true
+  
+  rnn:
+    enabled: true
+    model_type: "lstm"
+    default_params:
+      hidden_size: 128
+      num_layers: 3
+      dropout: 0.3
+  
+  statistical:
+    enabled: true
+    methods: ["gaussian", "markov", "fourier"]
+  
+  ydata:
+    enabled: true
+    privacy_budget: 1.0
+    epsilon: 1.0
+    delta: 0.00001
+
+validation:
+  enabled: true
+  default_metrics: ["basic", "statistical", "temporal"]
+  quality_threshold: 0.85
+  statistical_tests: ["ks", "anderson", "ljung_box"]
+
+observability:
+  metrics:
+    enabled: true
+    port: 9090
+    path: "/metrics"
+  tracing:
+    enabled: true
+    provider: "jaeger"
+    endpoint: "${JAEGER_ENDPOINT}"
+    service_name: "tsiot-server-staging"
+
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
+  file:
+    enabled: true
+    path: "/var/log/tsiot/staging-server.log"
+    max_size: "200MB"
+    max_age: "14d"
+    max_backups: 7
+
+security:
+  authentication:
+    enabled: true
+    method: "jwt"
+    jwt_secret: "${JWT_SECRET}"
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 500
+    burst: 1000
+
+# Staging-specific configuration
+staging:
+  data_retention: "14d"
+  backup_enabled: true
+  backup_schedule: "0 2 * * *"  # Daily at 2 AM
+  monitoring_alerts: true
+
+# External service configuration
+external_services:
+  influxdb:
+    url: "${INFLUXDB_URL}"
+    username: "${INFLUXDB_USERNAME}"
+    password: "${INFLUXDB_PASSWORD}"
+    ssl: true
+  
+  jaeger:
+    endpoint: "${JAEGER_ENDPOINT}"
+    username: "${JAEGER_USERNAME}"
+    password: "${JAEGER_PASSWORD}"
+
+# Resource limits
+resources:
+  max_memory: "4GB"
+  max_cpu: 4.0
+  max_disk: "100GB"
+  max_concurrent_requests: 1000
+
+# Load testing configuration
+load_testing:
+  enabled: true
+  max_requests_per_second: 100
+  max_concurrent_connections: 500
+  test_duration: "10m"
+
+# Data management
+data_management:
+  auto_cleanup: true
+  cleanup_schedule: "0 1 * * *"  # Daily at 1 AM
+  archive_old_data: true
+  archive_threshold: "7d"
+
+# Health checks
+health_checks:
+  enabled: true
+  interval: "30s"
+  timeout: "10s"
+  failure_threshold: 3
+  endpoints:
+    - "/health"
+    - "/ready"
+    - "/metrics"
+
+# Feature flags for staging
+feature_flags:
+  new_generator_algorithms: true
+  enhanced_validation: true
+  advanced_analytics: false
+  beta_features: true

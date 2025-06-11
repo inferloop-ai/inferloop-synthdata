@@ -1,0 +1,123 @@
+# Test environment configuration
+# Optimized for automated testing with minimal resource usage
+
+server:
+  host: "127.0.0.1"
+  port: 0  # Use random available port for testing
+  read_timeout: "5s"
+  write_timeout: "5s"
+  idle_timeout: "10s"
+  enable_tls: false
+
+mcp:
+  enabled: true
+  transport: "stdio"
+  max_message_size: 65536  # Smaller for tests
+
+storage:
+  backend: "file"  # Use file storage for tests
+  connection_string: "./test_data"
+  database: "test_db"
+  retention_policy: "1h"
+  batch_size: 10
+  timeout: "5s"
+
+generators:
+  timegan:
+    enabled: false  # Disable heavy generators for faster tests
+  
+  arima:
+    enabled: true
+    default_order: [1, 0, 1]  # Simple model for tests
+    seasonal: false
+  
+  rnn:
+    enabled: false  # Disable for performance
+  
+  statistical:
+    enabled: true
+    methods: ["gaussian"]  # Only basic methods
+  
+  ydata:
+    enabled: false  # Disable privacy features for basic tests
+
+validation:
+  enabled: true
+  default_metrics: ["basic"]
+  quality_threshold: 0.5  # Relaxed for test data
+  statistical_tests: ["ks"]
+
+observability:
+  metrics:
+    enabled: false  # Disable metrics in tests
+  tracing:
+    enabled: false  # Disable tracing in tests
+
+logging:
+  level: "warn"  # Reduce log noise in tests
+  format: "json"
+  output: "stdout"
+  file:
+    enabled: false
+
+security:
+  authentication:
+    enabled: false
+  rate_limiting:
+    enabled: false
+
+# Test-specific configuration
+testing:
+  mock_all_external_services: true
+  fast_mode: true
+  parallel_tests: true
+  cleanup_after_test: true
+  
+# Mock data configuration for tests
+mock_data:
+  generators:
+    simple_sine: 
+      enabled: true
+      frequency: 1
+      amplitude: 10
+      samples: 100
+    random_walk:
+      enabled: true
+      step_size: 0.1
+      samples: 50
+    constant:
+      enabled: true
+      value: 25.0
+      samples: 10
+
+# Test database configuration
+test_database:
+  in_memory: true
+  reset_between_tests: true
+  seed_data: false
+
+# Resource limits for tests
+resources:
+  max_memory: "256MB"
+  max_cpu: 1.0
+  max_disk: "100MB"
+  timeout: "30s"
+
+# Test fixtures
+fixtures:
+  sample_datasets:
+    - name: "small_temperature"
+      size: 100
+      type: "temperature"
+      pattern: "sine"
+    - name: "tiny_humidity" 
+      size: 50
+      type: "humidity"
+      pattern: "random"
+
+# CI/CD specific settings
+ci:
+  enable_coverage: true
+  enable_race_detection: true
+  enable_benchmarks: false
+  parallel_jobs: 2
