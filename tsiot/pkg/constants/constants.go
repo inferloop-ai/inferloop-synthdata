@@ -164,6 +164,9 @@ const (
 	GeneratorTypeLSTM        = "lstm"
 	GeneratorTypeGRU         = "gru"
 	GeneratorTypeStatistical = "statistical"
+	GeneratorTypeFourier     = "fourier"
+	GeneratorTypeWavelet     = "wavelet"
+	GeneratorTypeMarkov      = "markov"
 	GeneratorTypeYData       = "ydata"
 )
 
@@ -313,7 +316,7 @@ const (
 	RegexUUID         = `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
 	RegexSensorID     = `^[a-zA-Z0-9_-]+$`
 	RegexTimestamp    = `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$`
-	RegexFrequency    = `^[0-9]+(ns|us|µs|ms|s|m|h|d)$`
+	RegexFrequency    = `^[0-9]+(ns|us|ï¿½s|ms|s|m|h|d)$`
 	RegexVersion      = `^v?\d+\.\d+\.\d+(-[a-zA-Z0-9-]+)?$`
 )
 
