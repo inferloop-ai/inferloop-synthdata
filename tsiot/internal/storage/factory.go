@@ -14,6 +14,8 @@ import (
 	. "github.com/inferloop/tsiot/internal/storage/implementations/timescaledb"
 	. "github.com/inferloop/tsiot/internal/storage/implementations/s3"
 	. "github.com/inferloop/tsiot/internal/storage/implementations/redis"
+	. "github.com/inferloop/tsiot/internal/storage/implementations/file"
+	. "github.com/inferloop/tsiot/internal/storage/implementations/clickhouse"
 )
 
 // Factory implements the StorageFactory interface
@@ -151,9 +153,54 @@ func (f *Factory) registerDefaults() {
 		return NewTimescaleDBStorage(timescaleConfig, f.logger)
 	})
 
-	// Register ClickHouse storage (placeholder)
+	// Register ClickHouse storage
 	f.RegisterStorage(constants.StorageTypeClickhouse, func(config interfaces.StorageConfig) (interfaces.Storage, error) {
-		return nil, errors.NewStorageError("NOT_IMPLEMENTED", "ClickHouse storage not yet implemented")
+		clickhouseConfig := &ClickHouseStorageConfig{
+			Host:              "localhost",
+			Port:              9000,
+			Database:          config.Database,
+			Username:          config.Username,
+			Password:          config.Password,
+			ConnectTimeout:    config.Timeout,
+			QueryTimeout:      config.Timeout,
+			MaxConnections:    config.MaxConnections,
+			MaxIdleConns:      config.MaxConnections / 2,
+			ConnMaxLifetime:   time.Hour,
+			Compression:       "lz4",
+			BatchSize:         10000,
+			FlushInterval:     30 * time.Second,
+			Engine:            "MergeTree",
+			PartitionBy:       "toYYYYMM(timestamp)",
+			OrderBy:           "(series_id, timestamp)",
+			UseAsyncInserts:   true,
+		}
+
+		// Parse additional config from metadata
+		if config.Metadata != nil {
+			if engine, ok := config.Metadata["engine"].(string); ok {
+				clickhouseConfig.Engine = engine
+			}
+			if partitionBy, ok := config.Metadata["partition_by"].(string); ok {
+				clickhouseConfig.PartitionBy = partitionBy
+			}
+			if orderBy, ok := config.Metadata["order_by"].(string); ok {
+				clickhouseConfig.OrderBy = orderBy
+			}
+			if compression, ok := config.Metadata["compression"].(string); ok {
+				clickhouseConfig.Compression = compression
+			}
+			if batchSize, ok := config.Metadata["batch_size"].(float64); ok {
+				clickhouseConfig.BatchSize = int(batchSize)
+			}
+			if ttl, ok := config.Metadata["ttl"].(string); ok {
+				clickhouseConfig.TTL = ttl
+			}
+			if asyncInserts, ok := config.Metadata["async_inserts"].(bool); ok {
+				clickhouseConfig.UseAsyncInserts = asyncInserts
+			}
+		}
+
+		return NewClickHouseStorage(clickhouseConfig, f.logger)
 	})
 
 	// Register S3 storage
@@ -196,9 +243,52 @@ func (f *Factory) registerDefaults() {
 		return NewS3Storage(s3Config, f.logger)
 	})
 
-	// Register File storage (placeholder)
+	// Register File storage
 	f.RegisterStorage(constants.StorageTypeFile, func(config interfaces.StorageConfig) (interfaces.Storage, error) {
-		return nil, errors.NewStorageError("NOT_IMPLEMENTED", "File storage not yet implemented")
+		fileConfig := &FileStorageConfig{
+			BasePath:      config.ConnectionString,
+			Format:        "csv",
+			Compression:   config.Compression,
+			CreateDirs:    true,
+			FileRotation:  "daily",
+			BufferSize:    4096,
+			SyncWrites:    false,
+			IndexEnabled:  true,
+			BackupEnabled: false,
+			RetentionDays: 0, // No auto-cleanup by default
+		}
+
+		// Parse additional config from metadata
+		if config.Metadata != nil {
+			if format, ok := config.Metadata["format"].(string); ok {
+				fileConfig.Format = format
+			}
+			if rotation, ok := config.Metadata["file_rotation"].(string); ok {
+				fileConfig.FileRotation = rotation
+			}
+			if bufferSize, ok := config.Metadata["buffer_size"].(float64); ok {
+				fileConfig.BufferSize = int(bufferSize)
+			}
+			if syncWrites, ok := config.Metadata["sync_writes"].(bool); ok {
+				fileConfig.SyncWrites = syncWrites
+			}
+			if indexEnabled, ok := config.Metadata["index_enabled"].(bool); ok {
+				fileConfig.IndexEnabled = indexEnabled
+			}
+			if retentionDays, ok := config.Metadata["retention_days"].(float64); ok {
+				fileConfig.RetentionDays = int(retentionDays)
+			}
+			if maxFileSize, ok := config.Metadata["max_file_size"].(float64); ok {
+				fileConfig.MaxFileSize = int64(maxFileSize)
+			}
+		}
+
+		// Default path if not provided
+		if fileConfig.BasePath == "" {
+			fileConfig.BasePath = "./data"
+		}
+
+		return NewFileStorage(fileConfig, f.logger)
 	})
 
 	// Register Redis storage

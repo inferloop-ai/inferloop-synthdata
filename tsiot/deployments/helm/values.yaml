@@ -1,0 +1,664 @@
+# Default values for TSIoT Platform
+# This is a YAML-formatted file.
+
+# Global configuration
+global:
+  # Image registry and repository
+  imageRegistry: ""
+  imageRepository: tsiot
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  
+  # Common labels
+  commonLabels:
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: helm
+  
+  # Environment
+  environment: production
+  
+  # Storage class
+  storageClass: "gp3"
+  
+  # Timezone
+  timezone: UTC
+  
+  # Security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
+
+# Namespace configuration
+namespace:
+  create: true
+  name: tsiot
+  labels: {}
+  annotations: {}
+
+# TSIoT Server configuration
+server:
+  enabled: true
+  
+  # Image configuration
+  image:
+    repository: tsiot/server
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  
+  # Deployment configuration
+  replicaCount: 2
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9091"
+      prometheus.io/path: "/metrics"
+  
+  # Ingress configuration
+  ingress:
+    enabled: true
+    className: alb
+    annotations:
+      kubernetes.io/ingress.class: "alb"
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/healthcheck-path: /health
+    hosts:
+      - host: api.tsiot.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: tsiot-tls-secret
+        hosts:
+          - api.tsiot.com
+  
+  # Resource configuration
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+  
+  # Auto-scaling configuration
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  
+  # Liveness and readiness probes
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  
+  # Environment variables
+  env:
+    TSIOT_ENV: production
+    TSIOT_LOG_LEVEL: info
+    TSIOT_SERVER_PORT: "8080"
+    TSIOT_METRICS_PORT: "9091"
+  
+  # Configuration from ConfigMap
+  configMap:
+    create: true
+    data: {}
+  
+  # Secrets
+  secrets:
+    create: true
+    data: {}
+  
+  # Node selector
+  nodeSelector: {}
+  
+  # Tolerations
+  tolerations: []
+  
+  # Affinity
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - tsiot-server
+            topologyKey: kubernetes.io/hostname
+
+# TSIoT Worker configuration
+worker:
+  enabled: true
+  
+  # Image configuration
+  image:
+    repository: tsiot/worker
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  
+  # Deployment configuration
+  replicaCount: 3
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8081
+    targetPort: 8081
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9092"
+      prometheus.io/path: "/metrics"
+  
+  # Resource configuration
+  resources:
+    requests:
+      cpu: 1
+      memory: 2Gi
+    limits:
+      cpu: 4
+      memory: 8Gi
+  
+  # Auto-scaling configuration
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 85
+  
+  # Liveness and readiness probes
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8081
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8081
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  # Environment variables
+  env:
+    TSIOT_WORKER_CONCURRENCY: "4"
+    TSIOT_WORKER_QUEUE_SIZE: "1000"
+    TSIOT_WORKER_BATCH_SIZE: "100"
+  
+  # Node selector for compute-intensive workloads
+  nodeSelector:
+    node-type: compute
+  
+  # Tolerations for compute nodes
+  tolerations:
+    - key: compute-intensive
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+  
+  # Affinity for worker distribution
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - tsiot-worker
+            topologyKey: kubernetes.io/hostname
+
+# CLI configuration
+cli:
+  enabled: false  # Usually not deployed as a service
+  
+  image:
+    repository: tsiot/cli
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+
+# Database dependencies
+postgresql:
+  enabled: true
+  
+  auth:
+    enablePostgresUser: true
+    postgresPassword: "postgres-password-change-me"
+    username: tsiot_user
+    password: "tsiot-password-change-me"
+    database: tsiot
+  
+  architecture: replication
+  
+  primary:
+    persistence:
+      enabled: true
+      storageClass: gp3
+      size: 100Gi
+    
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+  
+  readReplicas:
+    replicaCount: 1
+    persistence:
+      enabled: true
+      storageClass: gp3
+      size: 100Gi
+    
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 2Gi
+  
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+redis:
+  enabled: true
+  
+  architecture: replication
+  
+  auth:
+    enabled: true
+    password: "redis-password-change-me"
+  
+  master:
+    persistence:
+      enabled: true
+      storageClass: gp3
+      size: 10Gi
+    
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 2Gi
+  
+  replica:
+    replicaCount: 2
+    persistence:
+      enabled: true
+      storageClass: gp3
+      size: 10Gi
+    
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+  
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+kafka:
+  enabled: true
+  
+  replicaCount: 3
+  
+  zookeeper:
+    enabled: true
+    replicaCount: 3
+    persistence:
+      enabled: true
+      storageClass: gp3
+      size: 10Gi
+  
+  persistence:
+    enabled: true
+    storageClass: gp3
+    size: 50Gi
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+  
+  metrics:
+    kafka:
+      enabled: true
+    jmx:
+      enabled: true
+    serviceMonitor:
+      enabled: true
+
+influxdb:
+  enabled: true
+  
+  persistence:
+    enabled: true
+    storageClass: gp3
+    size: 100Gi
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+  
+  config:
+    http:
+      enabled: true
+      bind-address: 8086
+    
+  adminUser:
+    organization: tsiot
+    bucket: timeseries
+    user: admin
+    password: "influxdb-password-change-me"
+    token: "influxdb-token-change-me"
+
+elasticsearch:
+  enabled: true
+  
+  replicas: 3
+  minimumMasterNodes: 2
+  
+  esConfig:
+    elasticsearch.yml: |
+      cluster.name: "tsiot-elasticsearch"
+      network.host: 0.0.0.0
+      bootstrap.memory_lock: false
+      discovery.zen.ping.unicast.hosts: "elasticsearch-master-headless"
+      discovery.zen.minimum_master_nodes: 2
+      xpack.security.enabled: false
+      xpack.monitoring.enabled: false
+  
+  volumeClaimTemplate:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: gp3
+    resources:
+      requests:
+        storage: 50Gi
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+
+# Monitoring configuration
+monitoring:
+  enabled: true
+  
+  prometheus:
+    enabled: true
+    
+    server:
+      persistentVolume:
+        enabled: true
+        storageClass: gp3
+        size: 100Gi
+      
+      resources:
+        requests:
+          cpu: 500m
+          memory: 2Gi
+        limits:
+          cpu: 2
+          memory: 8Gi
+      
+      retention: "30d"
+      retentionSize: "50GB"
+    
+    alertmanager:
+      enabled: true
+      
+      persistentVolume:
+        enabled: true
+        storageClass: gp3
+        size: 10Gi
+      
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+    
+    nodeExporter:
+      enabled: true
+    
+    kubeStateMetrics:
+      enabled: true
+    
+    pushgateway:
+      enabled: true
+  
+  grafana:
+    enabled: true
+    
+    persistence:
+      enabled: true
+      storageClassName: gp3
+      size: 10Gi
+    
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    
+    adminPassword: "grafana-admin-password-change-me"
+    
+    datasources:
+      datasources.yaml:
+        apiVersion: 1
+        datasources:
+          - name: Prometheus
+            type: prometheus
+            url: http://prometheus-server
+            access: proxy
+            isDefault: true
+    
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+          - name: 'default'
+            orgId: 1
+            folder: ''
+            type: file
+            disableDeletion: false
+            editable: true
+            options:
+              path: /var/lib/grafana/dashboards/default
+    
+    dashboards:
+      default:
+        tsiot-overview:
+          file: dashboards/tsiot-overview.json
+        kubernetes-cluster:
+          file: dashboards/kubernetes-cluster.json
+
+# Security configuration
+security:
+  # Pod Security Standards
+  podSecurityStandards:
+    enforce: restricted
+    audit: restricted
+    warn: restricted
+  
+  # Network Policies
+  networkPolicies:
+    enabled: true
+    
+    # Ingress policies
+    ingress:
+      enabled: true
+      allowedNamespaces:
+        - kube-system
+        - tsiot-monitoring
+    
+    # Egress policies
+    egress:
+      enabled: true
+      allowedPorts:
+        - 53   # DNS
+        - 80   # HTTP
+        - 443  # HTTPS
+        - 5432 # PostgreSQL
+        - 6379 # Redis
+        - 9092 # Kafka
+        - 8086 # InfluxDB
+        - 9200 # Elasticsearch
+  
+  # RBAC
+  rbac:
+    create: true
+    
+    # Service accounts
+    serviceAccounts:
+      server:
+        create: true
+        annotations:
+          eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/tsiot-server-role"
+      worker:
+        create: true
+        annotations:
+          eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/tsiot-worker-role"
+
+# Service mesh configuration (Istio)
+serviceMesh:
+  enabled: false
+  
+  istio:
+    enabled: false
+    
+    virtualService:
+      enabled: false
+      hosts:
+        - api.tsiot.com
+      gateways:
+        - tsiot-gateway
+    
+    destinationRule:
+      enabled: false
+      trafficPolicy:
+        tls:
+          mode: ISTIO_MUTUAL
+
+# Backup and disaster recovery
+backup:
+  enabled: true
+  
+  # Velero backup
+  velero:
+    enabled: false
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    ttl: "720h"            # 30 days
+  
+  # Database backups
+  postgresql:
+    enabled: true
+    schedule: "0 1 * * *"  # Daily at 1 AM
+    retention: "30d"
+  
+  # Storage backups
+  storage:
+    enabled: true
+    s3:
+      bucket: tsiot-backups
+      region: us-west-2
+
+# Feature flags
+features:
+  # Machine Learning GPU support
+  gpu:
+    enabled: false
+    nodeSelector:
+      nvidia.com/gpu: "true"
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+  
+  # Experimental features
+  experimental:
+    enabled: false
+  
+  # High availability
+  highAvailability:
+    enabled: true
+    multiAZ: true
+    crossRegion: false
+
+# Testing configuration
+testing:
+  enabled: false
+  
+  # End-to-end tests
+  e2e:
+    enabled: false
+    image:
+      repository: tsiot/e2e-tests
+      tag: "1.0.0"
+  
+  # Load tests
+  load:
+    enabled: false
+    image:
+      repository: tsiot/load-tests
+      tag: "1.0.0"

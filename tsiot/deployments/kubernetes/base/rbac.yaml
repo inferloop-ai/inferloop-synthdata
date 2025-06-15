@@ -1,0 +1,528 @@
+---
+# Service Account for TSIoT Server
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tsiot-server
+  namespace: tsiot
+  labels:
+    app.kubernetes.io/name: tsiot-server
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: server
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    # AWS IAM Role for Service Account (IRSA)
+    eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/tsiot-server-role"
+    eks.amazonaws.com/sts-regional-endpoints: "true"
+    eks.amazonaws.com/token-expiration: "86400"
+automountServiceAccountToken: true
+
+---
+# Service Account for TSIoT Worker
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tsiot-worker
+  namespace: tsiot
+  labels:
+    app.kubernetes.io/name: tsiot-worker
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/tsiot-worker-role"
+    eks.amazonaws.com/sts-regional-endpoints: "true"
+    eks.amazonaws.com/token-expiration: "86400"
+automountServiceAccountToken: true
+
+---
+# Service Account for TSIoT Monitoring
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tsiot-monitoring
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: tsiot-monitoring
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/tsiot-monitoring-role"
+    eks.amazonaws.com/sts-regional-endpoints: "true"
+    eks.amazonaws.com/token-expiration: "86400"
+automountServiceAccountToken: true
+
+---
+# ClusterRole for TSIoT Server
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tsiot-server-cluster-role
+  labels:
+    app.kubernetes.io/name: tsiot-server
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: server
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+rules:
+  # Read access to nodes for node-specific information
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  
+  # Read access to pods for health checking and discovery
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  
+  # Read access to services for service discovery
+  - apiGroups: [""]
+    resources: ["services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  
+  # Read access to configmaps for dynamic configuration
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  
+  # Read access to secrets for credentials
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  
+  # Read access to namespaces
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  
+  # Metrics access
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+
+---
+# Role for TSIoT Server within its namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tsiot-server-role
+  namespace: tsiot
+  labels:
+    app.kubernetes.io/name: tsiot-server
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: server
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+rules:
+  # Full access to configmaps for dynamic configuration
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Read access to secrets
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  
+  # Pod management for health checks and scaling
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Service management
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  
+  # Event creation for logging
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  
+  # PersistentVolumeClaim access for data storage
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  
+  # Job and CronJob management for batch processing
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Deployment management for worker scaling
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+---
+# Role for TSIoT Worker
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tsiot-worker-role
+  namespace: tsiot
+  labels:
+    app.kubernetes.io/name: tsiot-worker
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+rules:
+  # Read access to configmaps and secrets
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  
+  # Pod access for self-discovery and health
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  
+  # Service access for discovery
+  - apiGroups: [""]
+    resources: ["services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  
+  # Event creation for logging
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  
+  # Job management for batch processing
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # PersistentVolumeClaim access for temporary storage
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+
+---
+# ClusterRoleBinding for TSIoT Server
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tsiot-server-cluster-binding
+  labels:
+    app.kubernetes.io/name: tsiot-server
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: server
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tsiot-server-cluster-role
+subjects:
+  - kind: ServiceAccount
+    name: tsiot-server
+    namespace: tsiot
+
+---
+# RoleBinding for TSIoT Server
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tsiot-server-binding
+  namespace: tsiot
+  labels:
+    app.kubernetes.io/name: tsiot-server
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: server
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tsiot-server-role
+subjects:
+  - kind: ServiceAccount
+    name: tsiot-server
+    namespace: tsiot
+
+---
+# RoleBinding for TSIoT Worker
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tsiot-worker-binding
+  namespace: tsiot
+  labels:
+    app.kubernetes.io/name: tsiot-worker
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tsiot-worker-role
+subjects:
+  - kind: ServiceAccount
+    name: tsiot-worker
+    namespace: tsiot
+
+---
+# ClusterRole for Monitoring
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tsiot-monitoring-cluster-role
+  labels:
+    app.kubernetes.io/name: tsiot-monitoring
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+rules:
+  # Prometheus requires read access to various resources
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/proxy
+      - nodes/metrics
+      - services
+      - endpoints
+      - pods
+      - ingresses
+      - configmaps
+    verbs: ["get", "list", "watch"]
+  
+  - apiGroups: ["extensions", "networking.k8s.io"]
+    resources:
+      - ingresses
+    verbs: ["get", "list", "watch"]
+  
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - daemonsets
+      - statefulsets
+    verbs: ["get", "list", "watch"]
+  
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+  
+  # ServiceMonitor access for Prometheus Operator
+  - apiGroups: ["monitoring.coreos.com"]
+    resources:
+      - servicemonitors
+      - podmonitors
+      - prometheusrules
+    verbs: ["get", "list", "watch"]
+
+---
+# ClusterRoleBinding for Monitoring
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tsiot-monitoring-cluster-binding
+  labels:
+    app.kubernetes.io/name: tsiot-monitoring
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tsiot-monitoring-cluster-role
+subjects:
+  - kind: ServiceAccount
+    name: tsiot-monitoring
+    namespace: tsiot-monitoring
+
+---
+# PodSecurityPolicy for TSIoT (if PSP is enabled)
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: tsiot-psp
+  labels:
+    app.kubernetes.io/name: tsiot-psp
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: security-policy
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  requiredDropCapabilities:
+    - ALL
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  supplementalGroups:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1
+        max: 65535
+  fsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1
+        max: 65535
+  readOnlyRootFilesystem: false
+  seLinux:
+    rule: 'RunAsAny'
+
+---
+# ClusterRole to use the PodSecurityPolicy
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tsiot-psp-role
+  labels:
+    app.kubernetes.io/name: tsiot-psp
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: security-policy
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+rules:
+  - apiGroups: ['policy']
+    resources: ['podsecuritypolicies']
+    verbs: ['use']
+    resourceNames:
+      - tsiot-psp
+
+---
+# ClusterRoleBinding for PodSecurityPolicy
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tsiot-psp-binding
+  labels:
+    app.kubernetes.io/name: tsiot-psp
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: security-policy
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+roleRef:
+  kind: ClusterRole
+  name: tsiot-psp-role
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+  - kind: ServiceAccount
+    name: tsiot-server
+    namespace: tsiot
+  - kind: ServiceAccount
+    name: tsiot-worker
+    namespace: tsiot
+  - kind: ServiceAccount
+    name: tsiot-monitoring
+    namespace: tsiot-monitoring
+
+---
+# NetworkPolicy for inter-service communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tsiot-network-policy
+  namespace: tsiot
+  labels:
+    app.kubernetes.io/name: tsiot-network-policy
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic from the same namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: tsiot
+    # Allow traffic from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: tsiot-monitoring
+      ports:
+        - protocol: TCP
+          port: 9091  # Metrics port
+        - protocol: TCP
+          port: 9092  # Worker metrics port
+    # Allow traffic from ingress controllers
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 8088
+  egress:
+    # Allow DNS resolution
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow traffic to the same namespace
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: tsiot
+    # Allow HTTPS outbound for external services
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+    # Allow database connections
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 5432  # PostgreSQL
+        - protocol: TCP
+          port: 6379  # Redis
+        - protocol: TCP
+          port: 9092  # Kafka
+        - protocol: TCP
+          port: 8086  # InfluxDB
+        - protocol: TCP
+          port: 9200  # Elasticsearch
+        - protocol: TCP
+          port: 1883  # MQTT

@@ -170,6 +170,16 @@ const (
 	GeneratorTypeYData       = "ydata"
 )
 
+// Validator types
+const (
+	ValidatorTypeStatistical = "statistical"
+	ValidatorTypeQuality     = "quality"
+	ValidatorTypeTemporal    = "temporal"
+	ValidatorTypePrivacy     = "privacy"
+	ValidatorTypeDistribution = "distribution"
+	ValidatorTypeCustom      = "custom"
+)
+
 // Sensor types
 const (
 	SensorTypeTemperature = "temperature"

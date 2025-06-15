@@ -1,0 +1,94 @@
+apiVersion: v2
+name: tsiot
+description: TSIoT Time Series Synthetic Data Platform
+version: 1.0.0
+appVersion: "1.0.0"
+type: application
+
+# Chart metadata
+home: https://github.com/tsiot/tsiot
+sources:
+  - https://github.com/tsiot/tsiot
+maintainers:
+  - name: TSIoT Team
+    email: team@tsiot.com
+    url: https://tsiot.com
+
+# Chart keywords for discovery
+keywords:
+  - timeseries
+  - synthetic-data
+  - iot
+  - machine-learning
+  - data-generation
+  - privacy
+  - kubernetes
+
+# Chart annotations
+annotations:
+  category: Analytics
+  licenses: MIT
+  images: |
+    - name: tsiot-server
+      image: tsiot/server:1.0.0
+    - name: tsiot-worker
+      image: tsiot/worker:1.0.0
+    - name: tsiot-cli
+      image: tsiot/cli:1.0.0
+
+# Dependencies
+dependencies:
+  - name: postgresql
+    version: "12.x.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled
+    tags:
+      - database
+
+  - name: redis
+    version: "17.x.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled
+    tags:
+      - cache
+
+  - name: kafka
+    version: "22.x.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: kafka.enabled
+    tags:
+      - messaging
+
+  - name: influxdb
+    version: "5.x.x"
+    repository: "https://helm.influxdata.com/"
+    condition: influxdb.enabled
+    tags:
+      - timeseries
+
+  - name: elasticsearch
+    version: "8.x.x"
+    repository: "https://helm.elastic.co"
+    condition: elasticsearch.enabled
+    tags:
+      - search
+
+  - name: prometheus
+    version: "23.x.x"
+    repository: "https://prometheus-community.github.io/helm-charts"
+    condition: monitoring.prometheus.enabled
+    tags:
+      - monitoring
+
+  - name: grafana
+    version: "6.x.x"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: monitoring.grafana.enabled
+    tags:
+      - monitoring
+
+# Minimum Kubernetes version required
+kubeVersion: ">=1.25.0"
+
+# Icon for the chart
+icon: https://raw.githubusercontent.com/tsiot/tsiot/main/docs/assets/logo.png

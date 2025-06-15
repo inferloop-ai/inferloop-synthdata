@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tsiot.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsiot.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    server:
+      host: {{ .Values.config.server.host | quote }}
+      port: {{ .Values.config.server.port }}
+      timeout: {{ .Values.config.server.timeout | quote }}
+      
+    database:
+      type: {{ .Values.database.type | quote }}
+      host: {{ .Values.database.host | quote }}
+      port: {{ .Values.database.port }}
+      name: {{ .Values.database.name | quote }}
+      user: {{ .Values.database.user | quote }}
+      ssl_mode: {{ .Values.database.sslMode | quote }}
+      max_connections: {{ .Values.database.maxConnections }}
+      
+    redis:
+      enabled: {{ .Values.redis.enabled }}
+      {{- if .Values.redis.enabled }}
+      host: {{ .Values.redis.host | quote }}
+      port: {{ .Values.redis.port }}
+      database: {{ .Values.redis.database }}
+      {{- end }}
+      
+    kafka:
+      enabled: {{ .Values.kafka.enabled }}
+      {{- if .Values.kafka.enabled }}
+      brokers: {{ .Values.kafka.brokers | quote }}
+      topic_prefix: {{ .Values.kafka.topicPrefix | quote }}
+      {{- end }}
+      
+    logging:
+      level: {{ .Values.config.logging.level | quote }}
+      format: {{ .Values.config.logging.format | quote }}
+      
+    metrics:
+      enabled: {{ .Values.monitoring.enabled }}
+      port: {{ .Values.monitoring.port }}
+      
+    auth:
+      enabled: {{ .Values.auth.enabled }}
+      {{- if .Values.auth.enabled }}
+      method: {{ .Values.auth.method | quote }}
+      {{- end }}
+      
+    generators:
+      max_length: {{ .Values.config.generators.maxLength }}
+      timeout: {{ .Values.config.generators.timeout | quote }}
+      
+    validation:
+      enabled: {{ .Values.validation.enabled }}
+      max_concurrent: {{ .Values.validation.maxConcurrent }}
+      
+{{- if .Values.config.custom }}
+  {{- range $key, $value := .Values.config.custom }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- end }}

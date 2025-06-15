@@ -1,0 +1,74 @@
+[package]
+name = "tsiot-sdk"
+version = "1.0.0"
+edition = "2021"
+authors = ["TSIOT Development Team <dev@tsiot.com>"]
+license = "MIT"
+description = "Rust SDK for Time Series IoT Synthetic Data (TSIOT) service"
+homepage = "https://github.com/inferloop/tsiot"
+repository = "https://github.com/inferloop/tsiot"
+documentation = "https://docs.rs/tsiot-sdk"
+readme = "README.md"
+keywords = ["timeseries", "iot", "synthetic-data", "machine-learning", "analytics"]
+categories = ["api-bindings", "science", "web-programming::http-client"]
+rust-version = "1.70"
+
+[dependencies]
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "gzip", "stream"] }
+tokio = { version = "1.0", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Date/time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Async utilities
+futures = "0.3"
+
+# URL handling
+url = "2.4"
+
+# UUID generation
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.10"
+
+# Optional features
+csv = { version = "1.2", optional = true }
+parquet = { version = "50.0", optional = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+mockito = "1.2"
+assert_matches = "1.5"
+
+[features]
+default = ["csv"]
+csv = ["dep:csv"]
+parquet = ["dep:parquet"]
+full = ["csv", "parquet"]
+
+[[example]]
+name = "basic_usage"
+path = "examples/basic_usage.rs"
+
+[[example]]
+name = "async_generation"
+path = "examples/async_generation.rs"
+
+[[example]]
+name = "batch_processing"
+path = "examples/batch_processing.rs"
+
+[package.metadata.docs.rs]
+features = ["full"]
+rustdoc-args = ["--cfg", "docsrs"]

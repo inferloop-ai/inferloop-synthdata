@@ -6,6 +6,8 @@ import (
 
 	"gonum.org/v1/gonum/stat"
 	"gonum.org/v1/gonum/stat/distuv"
+
+	"github.com/inferloop/tsiot/pkg/models"
 )
 
 // StatisticalTestResult represents the result of a statistical test
@@ -648,4 +650,107 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// Wrapper functions for the statistical validator interface
+
+// KolmogorovSmirnovTest performs two-sample Kolmogorov-Smirnov test
+func KolmogorovSmirnovTest(sample1, sample2 []float64, alpha float64) (*models.StatisticalTestResult, error) {
+	suite := NewStatisticalTestSuite(alpha)
+	result := suite.TwoSampleKSTest(sample1, sample2)
+	
+	return &models.StatisticalTestResult{
+		TestName:      result.TestName,
+		Statistic:     result.Statistic,
+		PValue:        result.PValue,
+		CriticalValue: result.CriticalValue,
+		Passed:        !result.IsSignificant,
+		Alpha:         result.AlphaLevel,
+		Description:   result.Description,
+		Metadata: map[string]interface{}{
+			"interpretation": result.Interpretation,
+			"sample1_size":   len(sample1),
+			"sample2_size":   len(sample2),
+		},
+	}, nil
+}
+
+// AndersonDarlingTest performs Anderson-Darling test for normality
+func AndersonDarlingTest(sample1, sample2 []float64, alpha float64) (*models.StatisticalTestResult, error) {
+	suite := NewStatisticalTestSuite(alpha)
+	result := suite.AndersonDarlingTest(sample1)
+	
+	return &models.StatisticalTestResult{
+		TestName:      result.TestName,
+		Statistic:     result.Statistic,
+		PValue:        result.PValue,
+		CriticalValue: result.CriticalValue,
+		Passed:        !result.IsSignificant,
+		Alpha:         result.AlphaLevel,
+		Description:   result.Description,
+		Metadata: map[string]interface{}{
+			"interpretation": result.Interpretation,
+			"sample_size":    len(sample1),
+		},
+	}, nil
+}
+
+// LjungBoxTest performs Ljung-Box test for autocorrelation
+func LjungBoxTest(sample []float64, alpha float64) (*models.StatisticalTestResult, error) {
+	suite := NewStatisticalTestSuite(alpha)
+	result := suite.LjungBoxTest(sample, 0) // 0 means use default lags
+	
+	return &models.StatisticalTestResult{
+		TestName:      result.TestName,
+		Statistic:     result.Statistic,
+		PValue:        result.PValue,
+		CriticalValue: result.CriticalValue,
+		Passed:        !result.IsSignificant,
+		Alpha:         result.AlphaLevel,
+		Description:   result.Description,
+		Metadata: map[string]interface{}{
+			"interpretation": result.Interpretation,
+			"sample_size":    len(sample),
+		},
+	}, nil
+}
+
+// ShapiroWilkTest performs Shapiro-Wilk test for normality
+func ShapiroWilkTest(sample []float64, alpha float64) (*models.StatisticalTestResult, error) {
+	suite := NewStatisticalTestSuite(alpha)
+	result := suite.ShapiroWilkTest(sample)
+	
+	return &models.StatisticalTestResult{
+		TestName:      result.TestName,
+		Statistic:     result.Statistic,
+		PValue:        result.PValue,
+		CriticalValue: result.CriticalValue,
+		Passed:        !result.IsSignificant,
+		Alpha:         result.AlphaLevel,
+		Description:   result.Description,
+		Metadata: map[string]interface{}{
+			"interpretation": result.Interpretation,
+			"sample_size":    len(sample),
+		},
+	}, nil
+}
+
+// JarqueBeraTest performs Jarque-Bera test for normality
+func JarqueBeraTest(sample []float64, alpha float64) (*models.StatisticalTestResult, error) {
+	suite := NewStatisticalTestSuite(alpha)
+	result := suite.JarqueBeraTest(sample)
+	
+	return &models.StatisticalTestResult{
+		TestName:      result.TestName,
+		Statistic:     result.Statistic,
+		PValue:        result.PValue,
+		CriticalValue: result.CriticalValue,
+		Passed:        !result.IsSignificant,
+		Alpha:         result.AlphaLevel,
+		Description:   result.Description,
+		Metadata: map[string]interface{}{
+			"interpretation": result.Interpretation,
+			"sample_size":    len(sample),
+		},
+	}, nil
 }

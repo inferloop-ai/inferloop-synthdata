@@ -8,6 +8,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/inferloop/tsiot/internal/generators/arima"
+	"github.com/inferloop/tsiot/internal/generators/rnn"
+	"github.com/inferloop/tsiot/internal/generators/ydata"
 	"github.com/inferloop/tsiot/pkg/interfaces"
 	"github.com/inferloop/tsiot/pkg/constants"
 	"github.com/inferloop/tsiot/pkg/errors"
@@ -19,6 +22,11 @@ type Factory struct {
 	creators map[models.GeneratorType]interfaces.GeneratorCreateFunc
 	mu       sync.RWMutex
 	logger   *logrus.Logger
+}
+
+// NewGeneratorFactory creates a new generator factory with default logger
+func NewGeneratorFactory() *Factory {
+	return NewFactory(nil)
 }
 
 // NewFactory creates a new generator factory
@@ -116,40 +124,29 @@ func (f *Factory) registerDefaults() {
 		return NewTimeGANGenerator(nil, f.logger)
 	})
 
-	// Register ARIMA generator (placeholder)
+	// Register ARIMA generator
 	f.RegisterGenerator(models.GeneratorType(constants.GeneratorTypeARIMA), func() interfaces.Generator {
-		// For now, return a statistical generator configured for ARIMA-like behavior
-		config := &StatisticalConfig{
-			Method:    "arma",
-			AROrder:   2,
-			MAOrder:   1,
-			Seed:      time.Now().UnixNano(),
-		}
-		return NewStatisticalGenerator(config, f.logger)
+		return arima.NewARIMAGenerator(nil, f.logger)
 	})
 
-	// Register RNN generator (placeholder)
+	// Register RNN generator
 	f.RegisterGenerator(models.GeneratorType(constants.GeneratorTypeRNN), func() interfaces.Generator {
-		// In a real implementation, this would be a proper RNN-based generator
-		return NewTimeGANGenerator(nil, f.logger) // Placeholder using TimeGAN
+		return rnn.NewRNNGenerator(nil, f.logger)
 	})
 
-	// Register LSTM generator (placeholder)
+	// Register LSTM generator
 	f.RegisterGenerator(models.GeneratorType(constants.GeneratorTypeLSTM), func() interfaces.Generator {
-		// In a real implementation, this would be a proper LSTM-based generator
-		return NewTimeGANGenerator(nil, f.logger) // Placeholder using TimeGAN
+		return rnn.NewLSTMGenerator(nil, f.logger)
 	})
 
-	// Register GRU generator (placeholder)
+	// Register GRU generator
 	f.RegisterGenerator(models.GeneratorType(constants.GeneratorTypeGRU), func() interfaces.Generator {
-		// In a real implementation, this would be a proper GRU-based generator
-		return NewTimeGANGenerator(nil, f.logger) // Placeholder using TimeGAN
+		return rnn.NewGRUGenerator(nil, f.logger)
 	})
 
-	// Register YData generator (placeholder)
+	// Register YData generator
 	f.RegisterGenerator(models.GeneratorType(constants.GeneratorTypeYData), func() interfaces.Generator {
-		// In a real implementation, this would integrate with YData Synthetic
-		return NewStatisticalGenerator(nil, f.logger) // Placeholder using Statistical
+		return ydata.NewYDataGenerator(nil, f.logger)
 	})
 }
 

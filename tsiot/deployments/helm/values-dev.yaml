@@ -1,0 +1,417 @@
+# Development environment values for TSIoT Platform
+# This file overrides values.yaml for development deployments
+
+# Global configuration overrides
+global:
+  environment: development
+  imageRegistry: ""
+  imagePullPolicy: Always  # Always pull latest images in dev
+
+# TSIoT Server configuration for development
+server:
+  # Single replica for development
+  replicaCount: 1
+  
+  # Image configuration
+  image:
+    tag: "latest"  # Use latest tag in development
+    pullPolicy: Always
+  
+  # Service configuration
+  service:
+    type: NodePort  # Easier access in development
+    nodePort: 30080
+  
+  # Resource configuration (lower for development)
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1
+      memory: 2Gi
+  
+  # Disable autoscaling in development
+  autoscaling:
+    enabled: false
+  
+  # Development environment variables
+  env:
+    TSIOT_ENV: development
+    TSIOT_LOG_LEVEL: debug
+    TSIOT_ENABLE_PROFILING: "true"
+    TSIOT_ENABLE_DEBUG_ENDPOINTS: "true"
+    TSIOT_CORS_ORIGINS: "*"
+  
+  # Relaxed probes for development
+  livenessProbe:
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    failureThreshold: 5
+  
+  readinessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 5
+  
+  # No affinity rules in development
+  affinity: {}
+
+# TSIoT Worker configuration for development
+worker:
+  # Single replica for development
+  replicaCount: 1
+  
+  # Image configuration
+  image:
+    tag: "latest"
+    pullPolicy: Always
+  
+  # Resource configuration (lower for development)
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+  
+  # Disable autoscaling in development
+  autoscaling:
+    enabled: false
+  
+  # Development environment variables
+  env:
+    TSIOT_WORKER_CONCURRENCY: "2"
+    TSIOT_WORKER_QUEUE_SIZE: "100"
+    TSIOT_WORKER_BATCH_SIZE: "10"
+    TSIOT_LOG_LEVEL: debug
+  
+  # No node selector in development
+  nodeSelector: {}
+  
+  # No tolerations in development
+  tolerations: []
+  
+  # No affinity rules in development
+  affinity: {}
+
+# Database dependencies (smaller configurations for development)
+postgresql:
+  enabled: true
+  
+  # Single instance for development
+  architecture: standalone
+  
+  auth:
+    postgresPassword: "dev-postgres-password"
+    username: tsiot_dev
+    password: "dev-tsiot-password"
+    database: tsiot_dev
+  
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi  # Smaller storage for development
+    
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 2Gi
+  
+  # No read replicas in development
+  readReplicas:
+    replicaCount: 0
+
+redis:
+  enabled: true
+  
+  # Single instance for development
+  architecture: standalone
+  
+  auth:
+    enabled: true
+    password: "dev-redis-password"
+  
+  master:
+    persistence:
+      enabled: true
+      size: 5Gi  # Smaller storage for development
+    
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+  
+  # No replicas in development
+  replica:
+    replicaCount: 0
+
+kafka:
+  enabled: true
+  
+  # Single instance for development
+  replicaCount: 1
+  
+  zookeeper:
+    enabled: true
+    replicaCount: 1  # Single ZooKeeper instance
+    persistence:
+      size: 5Gi  # Smaller storage
+  
+  persistence:
+    size: 20Gi  # Smaller storage for development
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1
+      memory: 2Gi
+
+influxdb:
+  enabled: true
+  
+  persistence:
+    size: 20Gi  # Smaller storage for development
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1
+      memory: 2Gi
+  
+  adminUser:
+    organization: tsiot-dev
+    bucket: timeseries-dev
+    user: admin
+    password: "dev-influxdb-password"
+    token: "dev-influxdb-token"
+
+elasticsearch:
+  enabled: true
+  
+  # Single instance for development
+  replicas: 1
+  minimumMasterNodes: 1
+  
+  volumeClaimTemplate:
+    resources:
+      requests:
+        storage: 20Gi  # Smaller storage for development
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: 1
+      memory: 2Gi
+
+# Monitoring configuration for development
+monitoring:
+  enabled: true
+  
+  prometheus:
+    enabled: true
+    
+    server:
+      persistentVolume:
+        size: 20Gi  # Smaller storage for development
+      
+      resources:
+        requests:
+          cpu: 250m
+          memory: 1Gi
+        limits:
+          cpu: 1
+          memory: 4Gi
+      
+      retention: "7d"  # Shorter retention in development
+      retentionSize: "10GB"
+    
+    alertmanager:
+      enabled: true
+      
+      persistentVolume:
+        size: 5Gi  # Smaller storage for development
+      
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 250m
+          memory: 256Mi
+  
+  grafana:
+    enabled: true
+    
+    persistence:
+      size: 5Gi  # Smaller storage for development
+    
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+    
+    adminPassword: "dev-grafana-password"
+
+# Security configuration for development
+security:
+  # Relaxed security for development
+  podSecurityStandards:
+    enforce: baseline  # Less restrictive for development
+    audit: baseline
+    warn: baseline
+  
+  # Network policies disabled for easier development
+  networkPolicies:
+    enabled: false
+  
+  # RBAC simplified for development
+  rbac:
+    create: true
+    
+    serviceAccounts:
+      server:
+        create: true
+        annotations: {}  # No AWS role binding in development
+      worker:
+        create: true
+        annotations: {}
+
+# Service mesh disabled in development
+serviceMesh:
+  enabled: false
+
+# Backup disabled in development
+backup:
+  enabled: false
+
+# Feature flags for development
+features:
+  # GPU disabled in development
+  gpu:
+    enabled: false
+  
+  # Enable experimental features in development
+  experimental:
+    enabled: true
+  
+  # No high availability in development
+  highAvailability:
+    enabled: false
+    multiAZ: false
+    crossRegion: false
+
+# Testing enabled in development
+testing:
+  enabled: true
+  
+  e2e:
+    enabled: true
+    image:
+      tag: "latest"
+  
+  load:
+    enabled: true
+    image:
+      tag: "latest"
+
+# Development-specific ingress configuration
+ingress:
+  enabled: true
+  className: nginx  # Use nginx ingress for local development
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  hosts:
+    - host: api.tsiot.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []  # No TLS in local development
+
+# Development utilities
+devUtils:
+  enabled: true
+  
+  # PostgreSQL admin interface
+  pgAdmin:
+    enabled: true
+    image:
+      repository: dpage/pgadmin4
+      tag: "latest"
+    
+    service:
+      type: NodePort
+      nodePort: 30081
+    
+    env:
+      PGADMIN_DEFAULT_EMAIL: admin@tsiot.local
+      PGADMIN_DEFAULT_PASSWORD: dev-pgadmin-password
+  
+  # Redis admin interface
+  redisCommander:
+    enabled: true
+    image:
+      repository: rediscommander/redis-commander
+      tag: "latest"
+    
+    service:
+      type: NodePort
+      nodePort: 30082
+  
+  # Kafka UI
+  kafkaUI:
+    enabled: true
+    image:
+      repository: provectuslabs/kafka-ui
+      tag: "latest"
+    
+    service:
+      type: NodePort
+      nodePort: 30083
+    
+    env:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+
+# Development seed data
+seedData:
+  enabled: true
+  
+  # Sample time series data
+  timeseries:
+    enabled: true
+    datasets:
+      - name: sample-iot-sensors
+        size: 1000
+        interval: 1m
+      - name: sample-weather-data
+        size: 500
+        interval: 5m
+  
+  # Sample users and permissions
+  users:
+    enabled: true
+    users:
+      - username: dev-user
+        password: dev-password
+        role: developer
+      - username: test-user
+        password: test-password
+        role: viewer

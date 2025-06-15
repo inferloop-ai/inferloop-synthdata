@@ -1,0 +1,33 @@
+name: tsiot-infrastructure
+runtime: nodejs
+description: TSIoT Time Series Synthetic Data Platform Infrastructure
+
+template:
+  config:
+    aws:region:
+      description: The AWS region to deploy to
+      default: us-west-2
+    tsiot:projectName:
+      description: Name of the project
+      default: tsiot
+    tsiot:environment:
+      description: Environment (dev, staging, prod)
+      default: dev
+    tsiot:clusterVersion:
+      description: EKS cluster version
+      default: "1.28"
+    tsiot:enableMonitoring:
+      description: Enable monitoring stack
+      default: true
+    tsiot:enableEncryption:
+      description: Enable encryption at rest and in transit
+      default: true
+    tsiot:domainName:
+      description: Domain name for the application
+      default: ""
+
+backend:
+  url: s3://tsiot-pulumi-state-${AWS_ACCOUNT_ID}/pulumi
+
+options:
+  refresh: true
