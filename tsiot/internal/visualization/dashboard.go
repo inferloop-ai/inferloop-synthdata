@@ -887,15 +887,705 @@ func (dm *DashboardManager) handleDashboard(w http.ResponseWriter, r *http.Reque
 }
 
 func (dm *DashboardManager) handleWidget(w http.ResponseWriter, r *http.Request) {
-	// Widget-specific endpoint handling
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "widget endpoint"})
+	
+	// Extract widget ID from URL path
+	widgetID := dm.extractIDFromPath(r.URL.Path, "/api/v1/widgets/")
+	
+	switch r.Method {
+	case http.MethodGet:
+		if widgetID == "" {
+			// List all widgets
+			widgets := dm.widgetManager.GetAllWidgets()
+			dm.writeJSON(w, map[string]interface{}{
+				"widgets": widgets,
+				"count":   len(widgets),
+			})
+			return
+		}
+		
+		// Get specific widget
+		widget, err := dm.widgetManager.GetWidget(widgetID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Widget not found: %v", err), http.StatusNotFound)
+			return
+		}
+		
+		// Render widget data
+		data, err := dm.renderWidgetData(r.Context(), widget)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to render widget data: %v", err), http.StatusInternalServerError)
+			return
+		}
+		
+		response := map[string]interface{}{
+			"widget": widget,
+			"data":   data,
+		}
+		dm.writeJSON(w, response)
+		
+	case http.MethodPost:
+		// Create new widget
+		var widget Widget
+		if err := json.NewDecoder(r.Body).Decode(&widget); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid widget data: %v", err), http.StatusBadRequest)
+			return
+		}
+		
+		// Generate ID if not provided
+		if widget.ID == "" {
+			widget.ID = dm.generateWidgetID()
+		}
+		
+		// Set creation time
+		widget.CreatedAt = time.Now()
+		widget.UpdatedAt = time.Now()
+		
+		// Validate widget configuration
+		if err := dm.validateWidget(&widget); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid widget configuration: %v", err), http.StatusBadRequest)
+			return
+		}
+		
+		// Create widget
+		if err := dm.widgetManager.CreateWidget(&widget); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to create widget: %v", err), http.StatusInternalServerError)
+			return
+		}
+		
+		w.WriteHeader(http.StatusCreated)
+		dm.writeJSON(w, widget)
+		
+	case http.MethodPut:
+		if widgetID == "" {
+			http.Error(w, "Widget ID is required", http.StatusBadRequest)
+			return
+		}
+		
+		// Update widget
+		var widget Widget
+		if err := json.NewDecoder(r.Body).Decode(&widget); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid widget data: %v", err), http.StatusBadRequest)
+			return
+		}
+		
+		widget.ID = widgetID
+		widget.UpdatedAt = time.Now()
+		
+		if err := dm.validateWidget(&widget); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid widget configuration: %v", err), http.StatusBadRequest)
+			return
+		}
+		
+		if err := dm.widgetManager.UpdateWidget(&widget); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to update widget: %v", err), http.StatusInternalServerError)
+			return
+		}
+		
+		dm.writeJSON(w, widget)
+		
+	case http.MethodDelete:
+		if widgetID == "" {
+			http.Error(w, "Widget ID is required", http.StatusBadRequest)
+			return
+		}
+		
+		if err := dm.widgetManager.DeleteWidget(widgetID); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to delete widget: %v", err), http.StatusInternalServerError)
+			return
+		}
+		
+		w.WriteHeader(http.StatusNoContent)
+		
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (dm *DashboardManager) handleData(w http.ResponseWriter, r *http.Request) {
-	// Data endpoint handling
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "data endpoint"})
+	
+	// Parse query parameters
+	query := r.URL.Query()
+	
+	// Extract data source and parameters
+	dataSource := query.Get("source")
+	widgetID := query.Get("widget_id")
+	startTime := query.Get("start_time")
+	endTime := query.Get("end_time")
+	aggregation := query.Get("aggregation")
+	granularity := query.Get("granularity")
+	
+	switch r.Method {
+	case http.MethodGet:
+		// Handle real-time data requests
+		if query.Get("realtime") == "true" {
+			dm.handleRealTimeData(w, r)
+			return
+		}
+		
+		// Handle historical data requests
+		data, err := dm.fetchData(r.Context(), DataRequest{
+			Source:      dataSource,
+			WidgetID:    widgetID,
+			StartTime:   dm.parseTimeParam(startTime),
+			EndTime:     dm.parseTimeParam(endTime),
+			Aggregation: aggregation,
+			Granularity: granularity,
+			Filters:     dm.parseFilters(query),
+		})
+		
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to fetch data: %v", err), http.StatusInternalServerError)
+			return
+		}
+		
+		response := map[string]interface{}{
+			"data":      data,
+			"timestamp": time.Now(),
+			"count":     len(data),
+			"metadata": map[string]interface{}{
+				"source":      dataSource,
+				"aggregation": aggregation,
+				"granularity": granularity,
+			},
+		}
+		
+		dm.writeJSON(w, response)
+		
+	case http.MethodPost:
+		// Handle data query with complex parameters
+		var queryRequest DataQueryRequest
+		if err := json.NewDecoder(r.Body).Decode(&queryRequest); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid query request: %v", err), http.StatusBadRequest)
+			return
+		}
+		
+		data, err := dm.executeDataQuery(r.Context(), &queryRequest)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to execute query: %v", err), http.StatusInternalServerError)
+			return
+		}
+		
+		response := map[string]interface{}{
+			"data":           data,
+			"query":          queryRequest,
+			"execution_time": time.Now(),
+		}
+		
+		dm.writeJSON(w, response)
+		
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// DataRequest represents a data request
+type DataRequest struct {
+	Source      string                 `json:"source"`
+	WidgetID    string                 `json:"widget_id"`
+	StartTime   *time.Time             `json:"start_time"`
+	EndTime     *time.Time             `json:"end_time"`
+	Aggregation string                 `json:"aggregation"`
+	Granularity string                 `json:"granularity"`
+	Filters     map[string]interface{} `json:"filters"`
+}
+
+// DataQueryRequest represents a complex data query
+type DataQueryRequest struct {
+	Sources     []string               `json:"sources"`
+	TimeRange   TimeRange              `json:"time_range"`
+	Aggregation AggregationConfig      `json:"aggregation"`
+	Filters     []FilterConfig         `json:"filters"`
+	Grouping    []string               `json:"grouping"`
+	Sorting     []SortConfig           `json:"sorting"`
+	Limit       int                    `json:"limit"`
+	Offset      int                    `json:"offset"`
+	Format      string                 `json:"format"`
+}
+
+type TimeRange struct {
+	Start *time.Time `json:"start"`
+	End   *time.Time `json:"end"`
+}
+
+type AggregationConfig struct {
+	Method   string        `json:"method"`
+	Interval time.Duration `json:"interval"`
+	Function string        `json:"function"`
+}
+
+type FilterConfig struct {
+	Field    string      `json:"field"`
+	Operator string      `json:"operator"`
+	Value    interface{} `json:"value"`
+}
+
+type SortConfig struct {
+	Field string `json:"field"`
+	Order string `json:"order"` // "asc" or "desc"
+}
+
+func (dm *DashboardManager) handleRealTimeData(w http.ResponseWriter, r *http.Request) {
+	// Upgrade connection to WebSocket for real-time data
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true // In production, implement proper origin checking
+		},
+	}
+	
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		dm.logger.WithError(err).Error("Failed to upgrade to WebSocket")
+		return
+	}
+	defer conn.Close()
+	
+	// Register connection with WebSocket hub
+	client := &WebSocketClient{
+		ID:         dm.generateClientID(),
+		Connection: conn,
+		Send:       make(chan []byte, 256),
+		Hub:        dm.webSocketHub,
+	}
+	
+	dm.webSocketHub.Register <- client
+	
+	// Start goroutines for reading and writing
+	go client.WritePump()
+	go client.ReadPump()
+	
+	dm.logger.WithField("client_id", client.ID).Info("WebSocket client connected")
+}
+
+func (dm *DashboardManager) fetchData(ctx context.Context, request DataRequest) ([]interface{}, error) {
+	// Get appropriate data provider
+	provider, exists := dm.dataProviders[request.Source]
+	if !exists {
+		return nil, fmt.Errorf("unknown data source: %s", request.Source)
+	}
+	
+	// Fetch data from provider
+	data, err := provider.GetData(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch data from provider: %w", err)
+	}
+	
+	// Apply filters and transformations
+	filteredData := dm.applyDataFilters(data, request.Filters)
+	
+	// Apply aggregation if specified
+	if request.Aggregation != "" {
+		aggregatedData, err := dm.aggregateData(filteredData, request.Aggregation, request.Granularity)
+		if err != nil {
+			return nil, fmt.Errorf("failed to aggregate data: %w", err)
+		}
+		return aggregatedData, nil
+	}
+	
+	return filteredData, nil
+}
+
+func (dm *DashboardManager) executeDataQuery(ctx context.Context, query *DataQueryRequest) (interface{}, error) {
+	// Complex query execution logic
+	var allData []interface{}
+	
+	// Fetch data from all sources
+	for _, source := range query.Sources {
+		provider, exists := dm.dataProviders[source]
+		if !exists {
+			dm.logger.Warnf("Unknown data source: %s", source)
+			continue
+		}
+		
+		request := DataRequest{
+			Source:    source,
+			StartTime: query.TimeRange.Start,
+			EndTime:   query.TimeRange.End,
+		}
+		
+		data, err := provider.GetData(ctx, request)
+		if err != nil {
+			dm.logger.WithError(err).Warnf("Failed to fetch data from source: %s", source)
+			continue
+		}
+		
+		allData = append(allData, data...)
+	}
+	
+	// Apply filters
+	for _, filter := range query.Filters {
+		allData = dm.applyFilter(allData, filter)
+	}
+	
+	// Apply grouping if specified
+	if len(query.Grouping) > 0 {
+		allData = dm.applyGrouping(allData, query.Grouping)
+	}
+	
+	// Apply sorting
+	if len(query.Sorting) > 0 {
+		allData = dm.applySorting(allData, query.Sorting)
+	}
+	
+	// Apply pagination
+	if query.Limit > 0 {
+		start := query.Offset
+		end := start + query.Limit
+		if end > len(allData) {
+			end = len(allData)
+		}
+		if start < len(allData) {
+			allData = allData[start:end]
+		} else {
+			allData = []interface{}{}
+		}
+	}
+	
+	return allData, nil
+}
+
+// Helper functions
+
+func (dm *DashboardManager) extractIDFromPath(path, prefix string) string {
+	if len(path) <= len(prefix) {
+		return ""
+	}
+	return path[len(prefix):]
+}
+
+func (dm *DashboardManager) generateWidgetID() string {
+	return fmt.Sprintf("widget_%d", time.Now().UnixNano())
+}
+
+func (dm *DashboardManager) generateClientID() string {
+	return fmt.Sprintf("client_%d", time.Now().UnixNano())
+}
+
+func (dm *DashboardManager) validateWidget(widget *Widget) error {
+	if widget.Name == "" {
+		return fmt.Errorf("widget name is required")
+	}
+	if widget.Type == "" {
+		return fmt.Errorf("widget type is required")
+	}
+	return nil
+}
+
+func (dm *DashboardManager) renderWidgetData(ctx context.Context, widget *Widget) (interface{}, error) {
+	// Get data for the widget
+	if widget.DataSource == "" {
+		return nil, fmt.Errorf("widget has no data source configured")
+	}
+	
+	provider, exists := dm.dataProviders[widget.DataSource]
+	if !exists {
+		return nil, fmt.Errorf("unknown data source: %s", widget.DataSource)
+	}
+	
+	request := DataRequest{
+		Source:   widget.DataSource,
+		WidgetID: widget.ID,
+		Filters:  widget.Configuration,
+	}
+	
+	data, err := provider.GetData(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Transform data based on widget type
+	return dm.transformDataForWidget(data, widget)
+}
+
+func (dm *DashboardManager) transformDataForWidget(data []interface{}, widget *Widget) (interface{}, error) {
+	switch widget.Type {
+	case "line_chart", "area_chart":
+		return dm.transformForTimeSeriesChart(data, widget)
+	case "bar_chart", "column_chart":
+		return dm.transformForBarChart(data, widget)
+	case "pie_chart", "donut_chart":
+		return dm.transformForPieChart(data, widget)
+	case "gauge", "metric":
+		return dm.transformForMetric(data, widget)
+	case "table":
+		return dm.transformForTable(data, widget)
+	case "heatmap":
+		return dm.transformForHeatmap(data, widget)
+	default:
+		return data, nil
+	}
+}
+
+func (dm *DashboardManager) transformForTimeSeriesChart(data []interface{}, widget *Widget) (interface{}, error) {
+	// Transform data into time series format
+	series := make([]map[string]interface{}, 0)
+	
+	for _, item := range data {
+		if point, ok := item.(map[string]interface{}); ok {
+			series = append(series, map[string]interface{}{
+				"timestamp": point["timestamp"],
+				"value":     point["value"],
+				"series":    point["series"],
+			})
+		}
+	}
+	
+	return map[string]interface{}{
+		"type":   "time_series",
+		"series": series,
+		"config": widget.Configuration,
+	}, nil
+}
+
+func (dm *DashboardManager) transformForBarChart(data []interface{}, widget *Widget) (interface{}, error) {
+	// Transform data for bar chart
+	categories := make([]string, 0)
+	values := make([]float64, 0)
+	
+	for _, item := range data {
+		if point, ok := item.(map[string]interface{}); ok {
+			if cat, ok := point["category"].(string); ok {
+				categories = append(categories, cat)
+			}
+			if val, ok := point["value"].(float64); ok {
+				values = append(values, val)
+			}
+		}
+	}
+	
+	return map[string]interface{}{
+		"type":       "bar_chart",
+		"categories": categories,
+		"values":     values,
+		"config":     widget.Configuration,
+	}, nil
+}
+
+func (dm *DashboardManager) transformForPieChart(data []interface{}, widget *Widget) (interface{}, error) {
+	// Transform data for pie chart
+	segments := make([]map[string]interface{}, 0)
+	
+	for _, item := range data {
+		if point, ok := item.(map[string]interface{}); ok {
+			segments = append(segments, map[string]interface{}{
+				"label": point["label"],
+				"value": point["value"],
+				"color": point["color"],
+			})
+		}
+	}
+	
+	return map[string]interface{}{
+		"type":     "pie_chart",
+		"segments": segments,
+		"config":   widget.Configuration,
+	}, nil
+}
+
+func (dm *DashboardManager) transformForMetric(data []interface{}, widget *Widget) (interface{}, error) {
+	// Transform data for metric display
+	if len(data) == 0 {
+		return map[string]interface{}{
+			"type":  "metric",
+			"value": 0,
+			"config": widget.Configuration,
+		}, nil
+	}
+	
+	// Use the first value or calculate aggregate
+	var value interface{}
+	if point, ok := data[0].(map[string]interface{}); ok {
+		value = point["value"]
+	}
+	
+	return map[string]interface{}{
+		"type":   "metric",
+		"value":  value,
+		"config": widget.Configuration,
+	}, nil
+}
+
+func (dm *DashboardManager) transformForTable(data []interface{}, widget *Widget) (interface{}, error) {
+	// Transform data for table display
+	return map[string]interface{}{
+		"type":    "table",
+		"rows":    data,
+		"columns": dm.extractTableColumns(data),
+		"config":  widget.Configuration,
+	}, nil
+}
+
+func (dm *DashboardManager) transformForHeatmap(data []interface{}, widget *Widget) (interface{}, error) {
+	// Transform data for heatmap
+	matrix := make([][]interface{}, 0)
+	
+	// Group data into matrix format
+	// This is a simplified implementation
+	for _, item := range data {
+		if point, ok := item.(map[string]interface{}); ok {
+			row := []interface{}{
+				point["x"],
+				point["y"],
+				point["value"],
+			}
+			matrix = append(matrix, row)
+		}
+	}
+	
+	return map[string]interface{}{
+		"type":   "heatmap",
+		"matrix": matrix,
+		"config": widget.Configuration,
+	}, nil
+}
+
+func (dm *DashboardManager) extractTableColumns(data []interface{}) []string {
+	if len(data) == 0 {
+		return []string{}
+	}
+	
+	if row, ok := data[0].(map[string]interface{}); ok {
+		columns := make([]string, 0, len(row))
+		for key := range row {
+			columns = append(columns, key)
+		}
+		return columns
+	}
+	
+	return []string{}
+}
+
+func (dm *DashboardManager) parseTimeParam(timeStr string) *time.Time {
+	if timeStr == "" {
+		return nil
+	}
+	
+	if t, err := time.Parse(time.RFC3339, timeStr); err == nil {
+		return &t
+	}
+	
+	return nil
+}
+
+func (dm *DashboardManager) parseFilters(query map[string][]string) map[string]interface{} {
+	filters := make(map[string]interface{})
+	
+	for key, values := range query {
+		if len(values) == 1 {
+			filters[key] = values[0]
+		} else if len(values) > 1 {
+			filters[key] = values
+		}
+	}
+	
+	return filters
+}
+
+func (dm *DashboardManager) applyDataFilters(data []interface{}, filters map[string]interface{}) []interface{} {
+	if len(filters) == 0 {
+		return data
+	}
+	
+	filtered := make([]interface{}, 0)
+	
+	for _, item := range data {
+		if dm.matchesFilters(item, filters) {
+			filtered = append(filtered, item)
+		}
+	}
+	
+	return filtered
+}
+
+func (dm *DashboardManager) matchesFilters(item interface{}, filters map[string]interface{}) bool {
+	point, ok := item.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	
+	for key, expectedValue := range filters {
+		if actualValue, exists := point[key]; !exists || actualValue != expectedValue {
+			return false
+		}
+	}
+	
+	return true
+}
+
+func (dm *DashboardManager) aggregateData(data []interface{}, aggregation, granularity string) ([]interface{}, error) {
+	// Simple aggregation implementation
+	// In a real implementation, this would be more sophisticated
+	return data, nil
+}
+
+func (dm *DashboardManager) applyFilter(data []interface{}, filter FilterConfig) []interface{} {
+	// Apply individual filter
+	filtered := make([]interface{}, 0)
+	
+	for _, item := range data {
+		if dm.evaluateFilter(item, filter) {
+			filtered = append(filtered, item)
+		}
+	}
+	
+	return filtered
+}
+
+func (dm *DashboardManager) evaluateFilter(item interface{}, filter FilterConfig) bool {
+	point, ok := item.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	
+	value, exists := point[filter.Field]
+	if !exists {
+		return false
+	}
+	
+	switch filter.Operator {
+	case "eq":
+		return value == filter.Value
+	case "ne":
+		return value != filter.Value
+	case "gt":
+		return dm.compareValues(value, filter.Value) > 0
+	case "gte":
+		return dm.compareValues(value, filter.Value) >= 0
+	case "lt":
+		return dm.compareValues(value, filter.Value) < 0
+	case "lte":
+		return dm.compareValues(value, filter.Value) <= 0
+	default:
+		return false
+	}
+}
+
+func (dm *DashboardManager) compareValues(a, b interface{}) int {
+	// Simple comparison - in practice would need more sophisticated type handling
+	if af, ok := a.(float64); ok {
+		if bf, ok := b.(float64); ok {
+			if af < bf {
+				return -1
+			} else if af > bf {
+				return 1
+			}
+			return 0
+		}
+	}
+	return 0
+}
+
+func (dm *DashboardManager) applyGrouping(data []interface{}, groupBy []string) []interface{} {
+	// Group data by specified fields
+	// Simplified implementation
+	return data
+}
+
+func (dm *DashboardManager) applySorting(data []interface{}, sorting []SortConfig) []interface{} {
+	// Sort data by specified fields
+	// Simplified implementation
+	return data
 }
 
 func (dm *DashboardManager) handleThemes(w http.ResponseWriter, r *http.Request) {

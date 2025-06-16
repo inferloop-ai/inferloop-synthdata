@@ -98,10 +98,28 @@ func runGenerate(opts *GenerateOptions) error {
 
 	// Create generator factory
 	logger := logrus.New()
-	factory := generators.NewGeneratorFactory()
+	factory := generators.NewFactory(logger)
 	
-	// Create generator
-	generator, err := factory.CreateGenerator(models.GeneratorType(opts.Generator))
+	// Create generator based on the type
+	var genType models.GeneratorType
+	switch opts.Generator {
+	case "timegan":
+		genType = models.GeneratorTypeTimeGAN
+	case "arima":
+		genType = models.GeneratorTypeARIMA
+	case "rnn":
+		genType = models.GeneratorTypeRNN
+	case "lstm":
+		genType = models.GeneratorTypeLSTM
+	case "gru":
+		genType = models.GeneratorTypeGRU
+	case "ydata":
+		genType = models.GeneratorTypeYData
+	default:
+		genType = models.GeneratorTypeStatistical
+	}
+	
+	generator, err := factory.CreateGenerator(genType)
 	if err != nil {
 		return fmt.Errorf("failed to create generator: %w", err)
 	}
@@ -124,11 +142,43 @@ func runGenerate(opts *GenerateOptions) error {
 		fmt.Printf("Training completed successfully.\n")
 	}
 	
+	// Parse frequency
+	frequency, err := time.ParseDuration(opts.Frequency)
+	if err != nil {
+		return fmt.Errorf("invalid frequency: %w", err)
+	}
+
 	// Create generation request
 	request := &models.GenerationRequest{
-		ID:         fmt.Sprintf("cli-%d", time.Now().Unix()),
-		Parameters: params,
-		CreatedAt:  time.Now(),
+		ID:            fmt.Sprintf("cli-%d", time.Now().Unix()),
+		GeneratorType: genType,
+		SensorType:    opts.SensorType,
+		Parameters: models.GenerationParameters{
+			Count:     length,
+			StartTime: startTime,
+			EndTime:   startTime.Add(time.Duration(length) * frequency),
+			Frequency: frequency,
+			Schema: map[string]interface{}{
+				"fields": []map[string]interface{}{
+					{
+						"name": "timestamp",
+						"type": "timestamp",
+					},
+					{
+						"name": opts.SensorType,
+						"type": "float64",
+					},
+				},
+			},
+			NoiseLevel: opts.NoiseLevel,
+		},
+		OutputFormat: opts.Format,
+		Metadata: map[string]interface{}{
+			"generator":   opts.Generator,
+			"sensor_type": opts.SensorType,
+			"cli":         true,
+		},
+		CreatedAt: time.Now(),
 	}
 	
 	// Generate data
@@ -150,9 +200,9 @@ func runGenerate(opts *GenerateOptions) error {
 	
 	// Print summary
 	fmt.Printf("\nGeneration completed successfully!\n")
-	fmt.Printf("Generated %d data points\n", len(result.TimeSeries.DataPoints))
-	fmt.Printf("Quality Score: %.2f\n", result.Quality)
-	fmt.Printf("Generation Time: %s\n", result.Duration.String())
+	fmt.Printf("Generated %d data points\n", result.RecordsGenerated)
+	fmt.Printf("Time Range: %s to %s\n", result.StartTime.Format(time.RFC3339), result.EndTime.Format(time.RFC3339))
+	fmt.Printf("Generation Time: %s\n", result.ProcessingTime.String())
 	if opts.OutputFile != "-" {
 		fmt.Printf("Output saved to: %s\n", opts.OutputFile)
 	}
@@ -333,11 +383,19 @@ func outputGeneratedData(result *models.GenerationResult, opts *GenerateOptions)
 		defer output.Close()
 	}
 	
+	// Extract TimeSeries from result.Data
+	var timeSeries *models.TimeSeries
+	if ts, ok := result.Data.(*models.TimeSeries); ok {
+		timeSeries = ts
+	} else {
+		return fmt.Errorf("generated data is not a TimeSeries")
+	}
+	
 	switch opts.Format {
 	case "csv":
-		return outputTimeSeriesCSV(output, result.TimeSeries)
+		return outputTimeSeriesCSV(output, timeSeries)
 	case "json":
-		return outputTimeSeriesJSON(output, result.TimeSeries)
+		return outputTimeSeriesJSON(output, timeSeries)
 	default:
 		return fmt.Errorf("unsupported output format: %s", opts.Format)
 	}

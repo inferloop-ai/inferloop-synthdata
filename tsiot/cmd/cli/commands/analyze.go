@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -344,33 +345,118 @@ func performAnalysis(engine *analytics.Engine, timeSeries *models.TimeSeries, op
 	result := &AnalysisResult{
 		TimeSeries: timeSeries,
 	}
+	
+	ctx := context.Background()
 
-	// Calculate basic statistics
-	result.BasicStats = calculateBasicStatistics(timeSeries)
+	// Calculate basic statistics using the real analytics engine
+	if basicStatsResult, err := engine.AnalyzeBasicStatistics(ctx, timeSeries); err == nil && basicStatsResult.BasicStats != nil {
+		result.BasicStats = &BasicStatistics{
+			DataPoints: basicStatsResult.BasicStats.Count,
+			StartTime:  basicStatsResult.BasicStats.StartTime,
+			EndTime:    basicStatsResult.BasicStats.EndTime,
+			Mean:       basicStatsResult.BasicStats.Mean,
+			StdDev:     basicStatsResult.BasicStats.StandardDev,
+			Min:        basicStatsResult.BasicStats.Min,
+			Max:        basicStatsResult.BasicStats.Max,
+			Median:     basicStatsResult.BasicStats.Median,
+			Q25:        basicStatsResult.BasicStats.Q1,
+			Q75:        basicStatsResult.BasicStats.Q3,
+		}
+	} else {
+		// Fallback to simple calculation
+		result.BasicStats = calculateBasicStatistics(timeSeries)
+	}
 
-	// Perform requested analyses
+	// Perform requested analyses using real analytics engine
 	for _, analysisType := range opts.AnalysisType {
 		switch strings.ToLower(analysisType) {
 		case "basic", "all":
-			result.PatternAnalysis = analyzePatterns(timeSeries)
+			if trendResult, err := engine.AnalyzeTrend(ctx, timeSeries); err == nil && trendResult.TrendAnalysis != nil {
+				result.PatternAnalysis = &PatternAnalysis{
+					TrendDirection: trendResult.TrendAnalysis.Direction,
+					TrendStrength:  trendResult.TrendAnalysis.Strength,
+					PrimaryPeriod:  fmt.Sprintf("%.1f", trendResult.TrendAnalysis.Period),
+					Volatility:     trendResult.TrendAnalysis.Volatility,
+				}
+			} else {
+				result.PatternAnalysis = analyzePatterns(timeSeries)
+			}
 		case "advanced", "all":
-			result.PatternAnalysis = analyzePatterns(timeSeries)
+			// Use real pattern analysis
+			if patternResult, err := engine.AnalyzePatterns(ctx, timeSeries); err == nil && patternResult.PatternAnalysis != nil {
+				result.PatternAnalysis = &PatternAnalysis{
+					TrendDirection: "complex", // Patterns are more complex than simple trends
+					TrendStrength:  float64(len(patternResult.PatternAnalysis.Patterns)) / 10.0, // Normalize
+					PrimaryPeriod:  "variable",
+					Volatility:     calculateVolatility(extractValues(timeSeries)),
+				}
+			}
 		}
 	}
 
-	// Seasonality analysis
+	// Seasonality analysis using real analytics engine
 	if opts.Seasonality {
-		result.Seasonality = analyzeSeasonality(timeSeries)
+		if seasonalityResult, err := engine.AnalyzeSeasonality(ctx, timeSeries); err == nil && seasonalityResult.SeasonalityInfo != nil {
+			result.Seasonality = &SeasonalityAnalysis{
+				HasSeasonality:   seasonalityResult.SeasonalityInfo.HasSeasonality,
+				SeasonalStrength: seasonalityResult.SeasonalityInfo.Strength,
+				DominantPeriods:  seasonalityResult.SeasonalityInfo.DominantPeriods,
+				SeasonalPatterns: map[string]interface{}{
+					"primary_period": seasonalityResult.SeasonalityInfo.PrimaryPeriod,
+					"acf_peaks":      seasonalityResult.SeasonalityInfo.ACFPeaks,
+				},
+			}
+		} else {
+			result.Seasonality = analyzeSeasonality(timeSeries)
+		}
 	}
 
-	// Anomaly detection
+	// Anomaly detection using real analytics engine
 	if opts.DetectAnomalies {
-		result.Anomalies = detectAnomalies(timeSeries)
+		if anomalyResult, err := engine.DetectAnomalies(ctx, timeSeries); err == nil && anomalyResult.AnomalyDetection != nil {
+			anomalies := make([]AnomalyPoint, len(anomalyResult.AnomalyDetection.Anomalies))
+			for i, anomaly := range anomalyResult.AnomalyDetection.Anomalies {
+				anomalies[i] = AnomalyPoint{
+					Timestamp:   timeSeries.DataPoints[anomaly.Index].Timestamp,
+					Value:       timeSeries.DataPoints[anomaly.Index].Value,
+					AnomalyType: anomaly.Type,
+					Severity:    anomaly.Severity,
+				}
+			}
+			result.Anomalies = &AnomalyAnalysis{
+				AnomaliesFound: anomalies,
+				AnomalyRate:    float64(len(anomalies)) / float64(len(timeSeries.DataPoints)) * 100,
+				Method:         anomalyResult.AnomalyDetection.Method,
+			}
+		} else {
+			result.Anomalies = detectAnomalies(timeSeries)
+		}
 	}
 
-	// Forecasting
+	// Forecasting using real analytics engine
 	if opts.Forecast {
-		result.Forecast = generateForecast(timeSeries, opts.ForecastPeriods)
+		if forecastResult, err := engine.GenerateForecast(ctx, timeSeries, opts.ForecastPeriods); err == nil && forecastResult.Forecasting != nil {
+			forecastPoints := make([]ForecastPoint, len(forecastResult.Forecasting.Predictions))
+			for i, prediction := range forecastResult.Forecasting.Predictions {
+				forecastPoints[i] = ForecastPoint{
+					Timestamp:  prediction.Timestamp,
+					Value:      prediction.Value,
+					LowerBound: prediction.ConfidenceInterval.Lower,
+					UpperBound: prediction.ConfidenceInterval.Upper,
+				}
+			}
+			result.Forecast = &ForecastAnalysis{
+				Method:          forecastResult.Forecasting.Method,
+				ForecastPoints:  forecastPoints,
+				ConfidenceLevel: forecastResult.Forecasting.ConfidenceLevel,
+				ModelParameters: map[string]interface{}{
+					"model_type": forecastResult.Forecasting.Method,
+					"accuracy":   forecastResult.Forecasting.Accuracy.MAPE,
+				},
+			}
+		} else {
+			result.Forecast = generateForecast(timeSeries, opts.ForecastPeriods)
+		}
 	}
 
 	return result, nil

@@ -1,10 +1,16 @@
 package export
 
 import (
+	"archive/zip"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
+	"math"
+	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -542,20 +548,84 @@ func (ee *ExportEngine) generateOutputPath(job *ExportJob) string {
 }
 
 func (ee *ExportEngine) createOutputFile(path string) (io.WriteCloser, error) {
-	// In a real implementation, this would create the actual file
-	// For now, return a dummy writer
-	return &dummyWriter{}, nil
+	// Ensure directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+	
+	// Create the file
+	file, err := os.Create(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create file %s: %w", path, err)
+	}
+	
+	// Determine if we need compression based on file extension
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".gz":
+		return &gzipWriter{file: file, gzWriter: gzip.NewWriter(file)}, nil
+	case ".zip":
+		return ee.createZipWriter(file)
+	default:
+		return file, nil
+	}
 }
 
-// dummyWriter is a placeholder writer
-type dummyWriter struct{}
-
-func (dw *dummyWriter) Write(p []byte) (n int, error) {
-	return len(p), nil
+// gzipWriter wraps gzip writer with file
+type gzipWriter struct {
+	file     *os.File
+	gzWriter *gzip.Writer
 }
 
-func (dw *dummyWriter) Close() error {
-	return nil
+func (gw *gzipWriter) Write(p []byte) (n int, error) {
+	return gw.gzWriter.Write(p)
+}
+
+func (gw *gzipWriter) Close() error {
+	if err := gw.gzWriter.Close(); err != nil {
+		gw.file.Close()
+		return err
+	}
+	return gw.file.Close()
+}
+
+// zipWriter wraps zip writer with file
+type zipWriter struct {
+	file      *os.File
+	zipWriter *zip.Writer
+	writer    io.Writer
+}
+
+func (zw *zipWriter) Write(p []byte) (n int, error) {
+	return zw.writer.Write(p)
+}
+
+func (zw *zipWriter) Close() error {
+	if err := zw.zipWriter.Close(); err != nil {
+		zw.file.Close()
+		return err
+	}
+	return zw.file.Close()
+}
+
+func (ee *ExportEngine) createZipWriter(file *os.File) (io.WriteCloser, error) {
+	zipWriter := zip.NewWriter(file)
+	
+	// Create a single file entry in the zip
+	baseFilename := strings.TrimSuffix(filepath.Base(file.Name()), ".zip")
+	writer, err := zipWriter.Create(baseFilename)
+	if err != nil {
+		zipWriter.Close()
+		file.Close()
+		return nil, fmt.Errorf("failed to create zip entry: %w", err)
+	}
+	
+	return &zipWriter{
+		file:      file,
+		zipWriter: zipWriter,
+		writer:    writer,
+	}, nil
 }
 
 func (ee *ExportEngine) applyFilters(data []*models.TimeSeries, filter FilterOptions) []*models.TimeSeries {
@@ -614,9 +684,334 @@ func (ee *ExportEngine) applyFilters(data []*models.TimeSeries, filter FilterOpt
 }
 
 func (ee *ExportEngine) applyAggregation(data []*models.TimeSeries, agg AggregationOptions) ([]*models.TimeSeries, error) {
-	// Simplified aggregation implementation
-	// In a real implementation, this would be more sophisticated
-	return data, nil
+	if agg.Method == "" || agg.Method == "none" {
+		return data, nil
+	}
+	
+	aggregated := make([]*models.TimeSeries, 0, len(data))
+	
+	for _, ts := range data {
+		if len(ts.DataPoints) == 0 {
+			aggregated = append(aggregated, ts)
+			continue
+		}
+		
+		var aggregatedPoints []models.DataPoint
+		var err error
+		
+		switch agg.Method {
+		case "time_bucket":
+			aggregatedPoints, err = ee.aggregateByTimeBucket(ts.DataPoints, agg)
+		case "count":
+			aggregatedPoints, err = ee.aggregateByCount(ts.DataPoints, agg)
+		case "sliding_window":
+			aggregatedPoints, err = ee.aggregateBySlidingWindow(ts.DataPoints, agg)
+		case "adaptive":
+			aggregatedPoints, err = ee.aggregateAdaptive(ts.DataPoints, agg)
+		default:
+			return nil, fmt.Errorf("unsupported aggregation method: %s", agg.Method)
+		}
+		
+		if err != nil {
+			return nil, fmt.Errorf("aggregation failed for series %s: %w", ts.ID, err)
+		}
+		
+		// Create new time series with aggregated points
+		newTS := &models.TimeSeries{
+			ID:         ts.ID + "_agg",
+			SensorType: ts.SensorType,
+			DataPoints: aggregatedPoints,
+			Metadata:   make(map[string]interface{}),
+		}
+		
+		// Copy original metadata and add aggregation info
+		for k, v := range ts.Metadata {
+			newTS.Metadata[k] = v
+		}
+		newTS.Metadata["aggregation_method"] = agg.Method
+		newTS.Metadata["aggregation_function"] = agg.Function
+		newTS.Metadata["original_points"] = len(ts.DataPoints)
+		newTS.Metadata["aggregated_points"] = len(aggregatedPoints)
+		
+		// Update time range
+		if len(aggregatedPoints) > 0 {
+			newTS.StartTime = aggregatedPoints[0].Timestamp
+			newTS.EndTime = aggregatedPoints[len(aggregatedPoints)-1].Timestamp
+		}
+		
+		aggregated = append(aggregated, newTS)
+	}
+	
+	return aggregated, nil
+}
+
+func (ee *ExportEngine) aggregateByTimeBucket(points []models.DataPoint, agg AggregationOptions) ([]models.DataPoint, error) {
+	if agg.Interval == 0 {
+		return nil, fmt.Errorf("interval must be specified for time_bucket aggregation")
+	}
+	
+	// Group points by time buckets
+	buckets := make(map[int64][]models.DataPoint)
+	
+	for _, point := range points {
+		bucket := point.Timestamp.Unix() / int64(agg.Interval.Seconds())
+		buckets[bucket] = append(buckets[bucket], point)
+	}
+	
+	// Aggregate each bucket
+	var result []models.DataPoint
+	
+	// Sort bucket keys
+	var bucketKeys []int64
+	for key := range buckets {
+		bucketKeys = append(bucketKeys, key)
+	}
+	sort.Slice(bucketKeys, func(i, j int) bool { return bucketKeys[i] < bucketKeys[j] })
+	
+	for _, bucket := range bucketKeys {
+		points := buckets[bucket]
+		if len(points) == 0 {
+			continue
+		}
+		
+		aggregatedValue, err := ee.applyAggregationFunction(points, agg.Function)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Use the first timestamp of the bucket as the aggregated timestamp
+		bucketTime := time.Unix(bucket*int64(agg.Interval.Seconds()), 0)
+		
+		result = append(result, models.DataPoint{
+			Timestamp: bucketTime,
+			Value:     aggregatedValue,
+		})
+	}
+	
+	return result, nil
+}
+
+func (ee *ExportEngine) aggregateByCount(points []models.DataPoint, agg AggregationOptions) ([]models.DataPoint, error) {
+	if agg.Count <= 0 {
+		return nil, fmt.Errorf("count must be positive for count aggregation")
+	}
+	
+	var result []models.DataPoint
+	
+	for i := 0; i < len(points); i += agg.Count {
+		end := i + agg.Count
+		if end > len(points) {
+			end = len(points)
+		}
+		
+		batch := points[i:end]
+		aggregatedValue, err := ee.applyAggregationFunction(batch, agg.Function)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Use the first timestamp of the batch
+		result = append(result, models.DataPoint{
+			Timestamp: batch[0].Timestamp,
+			Value:     aggregatedValue,
+		})
+	}
+	
+	return result, nil
+}
+
+func (ee *ExportEngine) aggregateBySlidingWindow(points []models.DataPoint, agg AggregationOptions) ([]models.DataPoint, error) {
+	windowSize := agg.Count
+	if windowSize <= 0 {
+		windowSize = 10 // default window size
+	}
+	
+	if len(points) < windowSize {
+		return points, nil
+	}
+	
+	var result []models.DataPoint
+	
+	for i := windowSize - 1; i < len(points); i++ {
+		window := points[i-windowSize+1 : i+1]
+		
+		aggregatedValue, err := ee.applyAggregationFunction(window, agg.Function)
+		if err != nil {
+			return nil, err
+		}
+		
+		result = append(result, models.DataPoint{
+			Timestamp: points[i].Timestamp,
+			Value:     aggregatedValue,
+		})
+	}
+	
+	return result, nil
+}
+
+func (ee *ExportEngine) aggregateAdaptive(points []models.DataPoint, agg AggregationOptions) ([]models.DataPoint, error) {
+	// Adaptive aggregation based on variance or change rate
+	if len(points) < 3 {
+		return points, nil
+	}
+	
+	threshold := 0.1 // variance threshold
+	if agg.Threshold != nil {
+		threshold = *agg.Threshold
+	}
+	
+	var result []models.DataPoint
+	var currentGroup []models.DataPoint
+	
+	for i, point := range points {
+		currentGroup = append(currentGroup, point)
+		
+		// Check if we should aggregate the current group
+		if len(currentGroup) >= 2 && (i == len(points)-1 || ee.shouldAggregateGroup(currentGroup, threshold)) {
+			aggregatedValue, err := ee.applyAggregationFunction(currentGroup, agg.Function)
+			if err != nil {
+				return nil, err
+			}
+			
+			result = append(result, models.DataPoint{
+				Timestamp: currentGroup[0].Timestamp,
+				Value:     aggregatedValue,
+			})
+			
+			currentGroup = nil
+		}
+	}
+	
+	return result, nil
+}
+
+func (ee *ExportEngine) shouldAggregateGroup(points []models.DataPoint, threshold float64) bool {
+	if len(points) < 2 {
+		return false
+	}
+	
+	// Calculate variance
+	values := make([]float64, len(points))
+	sum := 0.0
+	
+	for i, point := range points {
+		if val, ok := point.Value.(float64); ok {
+			values[i] = val
+			sum += val
+		} else {
+			return false // can't calculate variance for non-numeric values
+		}
+	}
+	
+	mean := sum / float64(len(values))
+	variance := 0.0
+	
+	for _, val := range values {
+		variance += (val - mean) * (val - mean)
+	}
+	variance /= float64(len(values))
+	
+	return variance < threshold
+}
+
+func (ee *ExportEngine) applyAggregationFunction(points []models.DataPoint, function string) (interface{}, error) {
+	if len(points) == 0 {
+		return nil, fmt.Errorf("no points to aggregate")
+	}
+	
+	// Extract numeric values
+	var values []float64
+	for _, point := range points {
+		if val, ok := point.Value.(float64); ok {
+			values = append(values, val)
+		} else if val, ok := point.Value.(int); ok {
+			values = append(values, float64(val))
+		} else if val, ok := point.Value.(int64); ok {
+			values = append(values, float64(val))
+		}
+	}
+	
+	if len(values) == 0 {
+		return points[0].Value, nil // return first non-numeric value as-is
+	}
+	
+	switch function {
+	case "mean", "avg", "average":
+		sum := 0.0
+		for _, val := range values {
+			sum += val
+		}
+		return sum / float64(len(values)), nil
+		
+	case "sum":
+		sum := 0.0
+		for _, val := range values {
+			sum += val
+		}
+		return sum, nil
+		
+	case "min":
+		min := values[0]
+		for _, val := range values[1:] {
+			if val < min {
+				min = val
+			}
+		}
+		return min, nil
+		
+	case "max":
+		max := values[0]
+		for _, val := range values[1:] {
+			if val > max {
+				max = val
+			}
+		}
+		return max, nil
+		
+	case "median":
+		sorted := make([]float64, len(values))
+		copy(sorted, values)
+		sort.Float64s(sorted)
+		
+		mid := len(sorted) / 2
+		if len(sorted)%2 == 0 {
+			return (sorted[mid-1] + sorted[mid]) / 2, nil
+		}
+		return sorted[mid], nil
+		
+	case "count":
+		return float64(len(values)), nil
+		
+	case "std", "stddev":
+		if len(values) < 2 {
+			return 0.0, nil
+		}
+		
+		// Calculate mean
+		sum := 0.0
+		for _, val := range values {
+			sum += val
+		}
+		mean := sum / float64(len(values))
+		
+		// Calculate variance
+		variance := 0.0
+		for _, val := range values {
+			variance += (val - mean) * (val - mean)
+		}
+		variance /= float64(len(values) - 1)
+		
+		return math.Sqrt(variance), nil
+		
+	case "first":
+		return values[0], nil
+		
+	case "last":
+		return values[len(values)-1], nil
+		
+	default:
+		return nil, fmt.Errorf("unsupported aggregation function: %s", function)
+	}
 }
 
 func (ee *ExportEngine) cleanupRoutine(ctx context.Context) {
