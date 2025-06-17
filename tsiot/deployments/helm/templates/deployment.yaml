@@ -1,0 +1,438 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tsiot.fullname" . }}
+  labels:
+    {{- include "tsiot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "tsiot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "tsiot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "tsiot.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+          env:
+            - name: TSIOT_HOST
+              value: "0.0.0.0"
+            - name: TSIOT_PORT
+              value: "{{ .Values.service.port }}"
+            - name: TSIOT_LOG_LEVEL
+              value: "{{ .Values.config.logLevel }}"
+            - name: TSIOT_LOG_FORMAT
+              value: "{{ .Values.config.logFormat }}"
+            - name: TSIOT_DB_TYPE
+              value: "{{ .Values.database.type }}"
+            - name: TSIOT_DB_HOST
+              value: "{{ .Values.database.host }}"
+            - name: TSIOT_DB_PORT
+              value: "{{ .Values.database.port }}"
+            - name: TSIOT_DB_NAME
+              value: "{{ .Values.database.name }}"
+            - name: TSIOT_DB_USER
+              value: "{{ .Values.database.user }}"
+            - name: TSIOT_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tsiot.secretName" . }}
+                  key: database-password
+            - name: TSIOT_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tsiot.secretName" . }}
+                  key: jwt-secret
+            - name: TSIOT_API_KEY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tsiot.secretName" . }}
+                  key: api-key-secret
+            {{- if .Values.redis.enabled }}
+            - name: TSIOT_REDIS_URL
+              value: "redis://{{ include "tsiot.redis.fullname" . }}:{{ .Values.redis.port }}"
+            {{- end }}
+            {{- if .Values.kafka.enabled }}
+            - name: TSIOT_KAFKA_BROKERS
+              value: "{{ include "tsiot.kafka.brokers" . }}"
+            {{- end }}
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: "{{ $value }}"
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "tsiot.fullname" . }}-config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: {{ .Values.probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: /app/data
+            {{- end }}
+            {{- with .Values.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- if .Values.sidecar.enabled }}
+        - name: {{ .Values.sidecar.name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.sidecar.image.repository }}:{{ .Values.sidecar.image.tag }}"
+          imagePullPolicy: {{ .Values.sidecar.image.pullPolicy }}
+          ports:
+            - name: sidecar
+              containerPort: {{ .Values.sidecar.port }}
+              protocol: TCP
+          env:
+            {{- range $key, $value := .Values.sidecar.env }}
+            - name: {{ $key }}
+              value: "{{ $value }}"
+            {{- end }}
+          resources:
+            {{- toYaml .Values.sidecar.resources | nindent 12 }}
+          volumeMounts:
+            {{- with .Values.sidecar.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "tsiot.fullname" . }}-config
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "tsiot.fullname" . }}-data
+        {{- end }}
+        {{- with .Values.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.podDisruptionBudget.enabled }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- end }}
+
+---
+{{- if .Values.workers.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tsiot.fullname" . }}-worker
+  labels:
+    {{- include "tsiot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.workers.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "tsiot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "tsiot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "tsiot.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: worker
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.workers.image.repository }}:{{ .Values.workers.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.workers.image.pullPolicy }}
+          command: ["/app/bin/tsiot-worker"]
+          args:
+            - --config=/app/config/worker.yaml
+            {{- range .Values.workers.args }}
+            - {{ . }}
+            {{- end }}
+          env:
+            - name: TSIOT_WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TSIOT_LOG_LEVEL
+              value: "{{ .Values.config.logLevel }}"
+            - name: TSIOT_LOG_FORMAT
+              value: "{{ .Values.config.logFormat }}"
+            {{- if .Values.kafka.enabled }}
+            - name: TSIOT_KAFKA_BROKERS
+              value: "{{ include "tsiot.kafka.brokers" . }}"
+            {{- end }}
+            {{- if .Values.redis.enabled }}
+            - name: TSIOT_REDIS_URL
+              value: "redis://{{ include "tsiot.redis.fullname" . }}:{{ .Values.redis.port }}"
+            {{- end }}
+            {{- range $key, $value := .Values.workers.env }}
+            - name: {{ $key }}
+              value: "{{ $value }}"
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "tsiot.fullname" . }}-config
+          ports:
+            - name: worker-metrics
+              containerPort: {{ .Values.workers.metricsPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: worker-metrics
+            initialDelaySeconds: {{ .Values.workers.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.workers.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.workers.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.workers.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: worker-metrics
+            initialDelaySeconds: {{ .Values.workers.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.workers.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.workers.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.workers.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.workers.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            {{- with .Values.workers.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "tsiot.fullname" . }}-config
+        {{- with .Values.workers.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.workers.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.workers.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.workers.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+
+---
+{{- if .Values.scheduler.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tsiot.fullname" . }}-scheduler
+  labels:
+    {{- include "tsiot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduler
+spec:
+  replicas: 1  # Scheduler should be singleton
+  selector:
+    matchLabels:
+      {{- include "tsiot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scheduler
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "tsiot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: scheduler
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "tsiot.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: scheduler
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.scheduler.image.repository }}:{{ .Values.scheduler.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.scheduler.image.pullPolicy }}
+          command: ["/app/bin/tsiot-scheduler"]
+          args:
+            - --config=/app/config/scheduler.yaml
+            {{- range .Values.scheduler.args }}
+            - {{ . }}
+            {{- end }}
+          env:
+            - name: TSIOT_LOG_LEVEL
+              value: "{{ .Values.config.logLevel }}"
+            - name: TSIOT_LOG_FORMAT
+              value: "{{ .Values.config.logFormat }}"
+            - name: TSIOT_DB_TYPE
+              value: "{{ .Values.database.type }}"
+            - name: TSIOT_DB_HOST
+              value: "{{ .Values.database.host }}"
+            - name: TSIOT_DB_PORT
+              value: "{{ .Values.database.port }}"
+            - name: TSIOT_DB_NAME
+              value: "{{ .Values.database.name }}"
+            - name: TSIOT_DB_USER
+              value: "{{ .Values.database.user }}"
+            - name: TSIOT_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tsiot.secretName" . }}
+                  key: database-password
+            {{- if .Values.redis.enabled }}
+            - name: TSIOT_REDIS_URL
+              value: "redis://{{ include "tsiot.redis.fullname" . }}:{{ .Values.redis.port }}"
+            {{- end }}
+            {{- range $key, $value := .Values.scheduler.env }}
+            - name: {{ $key }}
+              value: "{{ $value }}"
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "tsiot.fullname" . }}-config
+          ports:
+            - name: scheduler-http
+              containerPort: {{ .Values.scheduler.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: scheduler-http
+            initialDelaySeconds: {{ .Values.scheduler.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.scheduler.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.scheduler.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.scheduler.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: scheduler-http
+            initialDelaySeconds: {{ .Values.scheduler.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.scheduler.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.scheduler.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.scheduler.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.scheduler.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            {{- with .Values.scheduler.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "tsiot.fullname" . }}-config
+        {{- with .Values.scheduler.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.scheduler.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduler.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduler.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

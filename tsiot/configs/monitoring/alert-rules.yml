@@ -1,0 +1,306 @@
+# Prometheus alerting rules for Time Series Synthetic Data MCP Server
+groups:
+
+  # Server Health Alerts
+  - name: tsiot-server-health
+    rules:
+      - alert: TSIOTServerDown
+        expr: up{job="tsiot-server"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          service: tsiot-server
+        annotations:
+          summary: "TSIOT Server is down"
+          description: "TSIOT Server instance {{ $labels.instance }} has been down for more than 30 seconds"
+
+      - alert: TSIOTServerHighMemoryUsage
+        expr: (process_resident_memory_bytes{job="tsiot-server"} / 1024 / 1024 / 1024) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: tsiot-server
+        annotations:
+          summary: "TSIOT Server high memory usage"
+          description: "TSIOT Server instance {{ $labels.instance }} is using {{ $value }}GB of memory"
+
+      - alert: TSIOTServerHighCPUUsage
+        expr: rate(process_cpu_seconds_total{job="tsiot-server"}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: tsiot-server
+        annotations:
+          summary: "TSIOT Server high CPU usage"
+          description: "TSIOT Server instance {{ $labels.instance }} CPU usage is {{ $value }}%"
+
+      - alert: TSIOTServerRestartLoop
+        expr: increase(process_start_time_seconds{job="tsiot-server"}[10m]) > 2
+        for: 0m
+        labels:
+          severity: critical
+          service: tsiot-server
+        annotations:
+          summary: "TSIOT Server restart loop detected"
+          description: "TSIOT Server instance {{ $labels.instance }} has restarted {{ $value }} times in the last 10 minutes"
+
+  # HTTP Request Alerts
+  - name: tsiot-http-alerts
+    rules:
+      - alert: TSIOTHighErrorRate
+        expr: rate(http_requests_total{job="tsiot-server",status=~"5.."}[5m]) / rate(http_requests_total{job="tsiot-server"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          service: tsiot-server
+        annotations:
+          summary: "High HTTP error rate on TSIOT Server"
+          description: "Error rate is {{ $value | humanizePercentage }} on {{ $labels.instance }}"
+
+      - alert: TSIOTHighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="tsiot-server"}[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: tsiot-server
+        annotations:
+          summary: "High latency on TSIOT Server"
+          description: "95th percentile latency is {{ $value }}s on {{ $labels.instance }}"
+
+      - alert: TSIOTLowThroughput
+        expr: rate(http_requests_total{job="tsiot-server"}[5m]) < 1
+        for: 10m
+        labels:
+          severity: info
+          service: tsiot-server
+        annotations:
+          summary: "Low throughput on TSIOT Server"
+          description: "Request rate is {{ $value }} requests/sec on {{ $labels.instance }}"
+
+  # Generation Alerts
+  - name: tsiot-generation-alerts
+    rules:
+      - alert: TSIOTGenerationFailures
+        expr: rate(tsiot_generation_failures_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: tsiot-server
+        annotations:
+          summary: "High generation failure rate"
+          description: "Generation failure rate is {{ $value }} failures/sec on {{ $labels.instance }}"
+
+      - alert: TSIOTGenerationQueueFull
+        expr: tsiot_generation_queue_size / tsiot_generation_queue_capacity > 0.9
+        for: 1m
+        labels:
+          severity: warning
+          service: tsiot-server
+        annotations:
+          summary: "Generation queue nearly full"
+          description: "Generation queue is {{ $value | humanizePercentage }} full on {{ $labels.instance }}"
+
+      - alert: TSIOTLongRunningGeneration
+        expr: tsiot_generation_duration_seconds > 3600
+        for: 0m
+        labels:
+          severity: warning
+          service: tsiot-server
+        annotations:
+          summary: "Long running generation job"
+          description: "Generation job {{ $labels.job_id }} has been running for {{ $value | humanizeDuration }} on {{ $labels.instance }}"
+
+  # Validation Alerts
+  - name: tsiot-validation-alerts
+    rules:
+      - alert: TSIOTLowQualityScore
+        expr: tsiot_validation_quality_score < 0.7
+        for: 0m
+        labels:
+          severity: warning
+          service: tsiot-server
+        annotations:
+          summary: "Low data quality score"
+          description: "Data quality score is {{ $value }} for dataset {{ $labels.dataset }} on {{ $labels.instance }}"
+
+      - alert: TSIOTValidationFailures
+        expr: rate(tsiot_validation_failures_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          service: tsiot-server
+        annotations:
+          summary: "High validation failure rate"
+          description: "Validation failure rate is {{ $value }} failures/sec on {{ $labels.instance }}"
+
+  # Storage Alerts
+  - name: tsiot-storage-alerts
+    rules:
+      - alert: TSIOTStorageConnectionFailed
+        expr: tsiot_storage_connection_status == 0
+        for: 30s
+        labels:
+          severity: critical
+          service: tsiot-server
+        annotations:
+          summary: "Storage connection failed"
+          description: "Cannot connect to {{ $labels.storage_type }} storage on {{ $labels.instance }}"
+
+      - alert: TSIOTStorageHighLatency
+        expr: histogram_quantile(0.95, rate(tsiot_storage_operation_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: tsiot-server
+        annotations:
+          summary: "High storage operation latency"
+          description: "95th percentile storage latency is {{ $value }}s for {{ $labels.operation }} on {{ $labels.instance }}"
+
+      - alert: TSIOTStorageDiskSpaceLow
+        expr: (tsiot_storage_disk_free_bytes / tsiot_storage_disk_total_bytes) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: tsiot-server
+        annotations:
+          summary: "Low disk space for storage"
+          description: "Only {{ $value | humanizePercentage }} disk space remaining on {{ $labels.instance }}"
+
+  # Worker Alerts
+  - name: tsiot-worker-alerts
+    rules:
+      - alert: TSIOTWorkerDown
+        expr: up{job="tsiot-workers"} == 0
+        for: 1m
+        labels:
+          severity: warning
+          service: tsiot-worker
+        annotations:
+          summary: "TSIOT Worker is down"
+          description: "TSIOT Worker instance {{ $labels.instance }} has been down for more than 1 minute"
+
+      - alert: TSIOTWorkerJobBacklog
+        expr: tsiot_worker_job_queue_size > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: tsiot-worker
+        annotations:
+          summary: "High job backlog on worker"
+          description: "Worker {{ $labels.instance }} has {{ $value }} jobs in queue"
+
+      - alert: TSIOTWorkerJobFailures
+        expr: rate(tsiot_worker_job_failures_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: tsiot-worker
+        annotations:
+          summary: "High job failure rate on worker"
+          description: "Worker {{ $labels.instance }} job failure rate is {{ $value }} failures/sec"
+
+  # MCP Protocol Alerts
+  - name: tsiot-mcp-alerts
+    rules:
+      - alert: TSIOTMCPConnectionDrops
+        expr: rate(tsiot_mcp_connection_drops_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: tsiot-server
+        annotations:
+          summary: "High MCP connection drop rate"
+          description: "MCP connection drop rate is {{ $value }} drops/sec on {{ $labels.instance }}"
+
+      - alert: TSIOTMCPMessageErrors
+        expr: rate(tsiot_mcp_message_errors_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          service: tsiot-server
+        annotations:
+          summary: "High MCP message error rate"
+          description: "MCP message error rate is {{ $value }} errors/sec on {{ $labels.instance }}"
+
+  # Security Alerts
+  - name: tsiot-security-alerts
+    rules:
+      - alert: TSIOTSuspiciousActivity
+        expr: rate(tsiot_auth_failures_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          service: tsiot-server
+          category: security
+        annotations:
+          summary: "Suspicious authentication activity"
+          description: "High authentication failure rate: {{ $value }} failures/sec on {{ $labels.instance }}"
+
+      - alert: TSIOTRateLimitExceeded
+        expr: rate(tsiot_rate_limit_exceeded_total[5m]) > 10
+        for: 1m
+        labels:
+          severity: info
+          service: tsiot-server
+          category: security
+        annotations:
+          summary: "Rate limit exceeded frequently"
+          description: "Rate limit exceeded {{ $value }} times/sec on {{ $labels.instance }}"
+
+  # Infrastructure Alerts
+  - name: tsiot-infrastructure-alerts
+    rules:
+      - alert: TSIOTDatabaseDown
+        expr: up{job="influxdb"} == 0 or up{job="timescaledb"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          service: database
+        annotations:
+          summary: "Database is down"
+          description: "Database {{ $labels.job }} on {{ $labels.instance }} is down"
+
+      - alert: TSIOTRedisDown
+        expr: up{job="redis"} == 0
+        for: 30s
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis instance {{ $labels.instance }} is down"
+
+      - alert: TSIOTMessageQueueDown
+        expr: up{job="kafka"} == 0
+        for: 30s
+        labels:
+          severity: warning
+          service: kafka
+        annotations:
+          summary: "Kafka is down"
+          description: "Kafka instance {{ $labels.instance }} is down"
+
+  # Data Quality Alerts
+  - name: tsiot-data-quality-alerts
+    rules:
+      - alert: TSIOTDataQualityDegraded
+        expr: avg_over_time(tsiot_validation_quality_score[1h]) < 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: tsiot-server
+          category: data_quality
+        annotations:
+          summary: "Data quality degraded"
+          description: "Average data quality score over 1h is {{ $value }} on {{ $labels.instance }}"
+
+      - alert: TSIOTAnomalyDetected
+        expr: tsiot_anomaly_detection_score > 0.9
+        for: 0m
+        labels:
+          severity: info
+          service: tsiot-server
+          category: data_quality
+        annotations:
+          summary: "Anomaly detected in generated data"
+          description: "Anomaly score {{ $value }} detected in dataset {{ $labels.dataset }} on {{ $labels.instance }}"

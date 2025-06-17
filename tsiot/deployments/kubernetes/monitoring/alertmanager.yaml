@@ -1,0 +1,529 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "0.26.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager
+      app.kubernetes.io/instance: tsiot
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: alertmanager
+        app.kubernetes.io/instance: tsiot
+        app.kubernetes.io/version: "0.26.0"
+        app.kubernetes.io/component: monitoring
+        app.kubernetes.io/part-of: tsiot-platform
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9093"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: alertmanager
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.26.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - '--config.file=/etc/alertmanager/alertmanager.yml'
+            - '--storage.path=/alertmanager'
+            - '--web.external-url=http://alertmanager.tsiot-monitoring.svc.cluster.local:9093'
+            - '--web.route-prefix=/'
+            - '--cluster.listen-address=0.0.0.0:9094'
+            - '--cluster.peer=alertmanager.tsiot-monitoring.svc.cluster.local:9094'
+            - '--log.level=info'
+            - '--log.format=logfmt'
+          ports:
+            - name: web
+              containerPort: 9093
+              protocol: TCP
+            - name: mesh
+              containerPort: 9094
+              protocol: TCP
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: web
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: web
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 4
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager
+            - name: storage
+              mountPath: /alertmanager
+      volumes:
+        - name: config
+          configMap:
+            name: alertmanager-config
+        - name: storage
+          persistentVolumeClaim:
+            claimName: alertmanager-storage
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - key: "monitoring"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "0.26.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9093"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+    - name: web
+      port: 9093
+      targetPort: web
+      protocol: TCP
+    - name: mesh
+      port: 9094
+      targetPort: mesh
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/instance: tsiot
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: alertmanager-storage
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "0.26.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alertmanager
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "0.26.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+automountServiceAccountToken: true
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "0.26.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+data:
+  alertmanager.yml: |
+    global:
+      smtp_smarthost: 'smtp.gmail.com:587'
+      smtp_from: 'alerts@tsiot.com'
+      smtp_auth_username: 'alerts@tsiot.com'
+      smtp_auth_password: 'smtp-password-change-me'
+      slack_api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+
+    # Inhibition rules allow to mute a set of alerts given that another alert is firing
+    inhibit_rules:
+      - source_matchers:
+          - severity="critical"
+        target_matchers:
+          - severity="warning"
+        equal: ['alertname', 'cluster', 'service']
+
+    # Routing tree for alerts
+    route:
+      group_by: ['alertname', 'cluster', 'service']
+      group_wait: 5s
+      group_interval: 10s
+      repeat_interval: 12h
+      receiver: 'default'
+      routes:
+        # Critical alerts
+        - matchers:
+            - severity="critical"
+          receiver: 'critical-alerts'
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 5m
+
+        # TSIoT specific alerts
+        - matchers:
+            - service=~"tsiot-.*"
+          receiver: 'tsiot-team'
+          group_wait: 10s
+          group_interval: 5m
+          repeat_interval: 1h
+
+        # Database alerts
+        - matchers:
+            - service=~"postgresql|redis|influxdb|elasticsearch"
+          receiver: 'database-team'
+          group_wait: 30s
+          group_interval: 10m
+          repeat_interval: 2h
+
+        # Infrastructure alerts
+        - matchers:
+            - service="kubernetes"
+          receiver: 'infrastructure-team'
+          group_wait: 1m
+          group_interval: 15m
+          repeat_interval: 4h
+
+    # Alert receivers
+    receivers:
+      - name: 'default'
+        slack_configs:
+          - channel: '#alerts-general'
+            title: 'TSIoT Alert'
+            text: |
+              {{ range .Alerts }}
+              Alert: {{ .Annotations.summary }}
+              Description: {{ .Annotations.description }}
+              Severity: {{ .Labels.severity }}
+              Service: {{ .Labels.service }}
+              {{ end }}
+
+      - name: 'critical-alerts'
+        email_configs:
+          - to: 'oncall@tsiot.com'
+            subject: 'CRITICAL: TSIoT Alert - {{ .GroupLabels.alertname }}'
+            body: |
+              Alert Details:
+              {{ range .Alerts }}
+              - Alert: {{ .Annotations.summary }}
+              - Description: {{ .Annotations.description }}
+              - Severity: {{ .Labels.severity }}
+              - Service: {{ .Labels.service }}
+              - Started: {{ .StartsAt }}
+              {{ end }}
+              
+              Dashboard: https://grafana.tsiot.com
+              Runbook: https://docs.tsiot.com/runbooks/{{ .GroupLabels.alertname }}
+        slack_configs:
+          - channel: '#alerts-critical'
+            title: '=¨ CRITICAL ALERT =¨'
+            text: |
+              {{ range .Alerts }}
+              *Alert:* {{ .Annotations.summary }}
+              *Description:* {{ .Annotations.description }}
+              *Severity:* {{ .Labels.severity }}
+              *Service:* {{ .Labels.service }}
+              *Started:* {{ .StartsAt }}
+              {{ end }}
+            send_resolved: true
+
+      - name: 'tsiot-team'
+        email_configs:
+          - to: 'tsiot-team@tsiot.com'
+            subject: 'TSIoT Platform Alert - {{ .GroupLabels.alertname }}'
+            body: |
+              TSIoT Platform Alert:
+              {{ range .Alerts }}
+              - Alert: {{ .Annotations.summary }}
+              - Description: {{ .Annotations.description }}
+              - Severity: {{ .Labels.severity }}
+              - Service: {{ .Labels.service }}
+              {{ end }}
+        slack_configs:
+          - channel: '#tsiot-alerts'
+            title: 'TSIoT Platform Alert'
+            text: |
+              {{ range .Alerts }}
+              *Alert:* {{ .Annotations.summary }}
+              *Service:* {{ .Labels.service }}
+              *Severity:* {{ .Labels.severity }}
+              {{ end }}
+
+      - name: 'database-team'
+        email_configs:
+          - to: 'database-team@tsiot.com'
+            subject: 'Database Alert - {{ .GroupLabels.alertname }}'
+            body: |
+              Database Alert:
+              {{ range .Alerts }}
+              - Alert: {{ .Annotations.summary }}
+              - Description: {{ .Annotations.description }}
+              - Service: {{ .Labels.service }}
+              {{ end }}
+        slack_configs:
+          - channel: '#database-alerts'
+            title: 'Database Alert'
+            text: |
+              {{ range .Alerts }}
+              *Alert:* {{ .Annotations.summary }}
+              *Service:* {{ .Labels.service }}
+              {{ end }}
+
+      - name: 'infrastructure-team'
+        email_configs:
+          - to: 'infrastructure-team@tsiot.com'
+            subject: 'Infrastructure Alert - {{ .GroupLabels.alertname }}'
+            body: |
+              Infrastructure Alert:
+              {{ range .Alerts }}
+              - Alert: {{ .Annotations.summary }}
+              - Description: {{ .Annotations.description }}
+              - Node: {{ .Labels.instance }}
+              {{ end }}
+        slack_configs:
+          - channel: '#infrastructure-alerts'
+            title: 'Infrastructure Alert'
+            text: |
+              {{ range .Alerts }}
+              *Alert:* {{ .Annotations.summary }}
+              *Node:* {{ .Labels.instance }}
+              {{ end }}
+
+      # PagerDuty integration for critical alerts
+      - name: 'pagerduty-critical'
+        pagerduty_configs:
+          - service_key: 'pagerduty-service-key-change-me'
+            description: 'TSIoT Critical Alert: {{ .GroupLabels.alertname }}'
+            details:
+              firing: '{{ template "pagerduty.default.instances" . }}'
+              summary: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+              severity: '{{ .CommonLabels.severity }}'
+              service: '{{ .CommonLabels.service }}'
+            links:
+              - href: 'https://grafana.tsiot.com'
+                text: 'Grafana Dashboard'
+
+      # Webhook for integration with external systems
+      - name: 'webhook-integration'
+        webhook_configs:
+          - url: 'https://api.tsiot.com/webhooks/alerts'
+            send_resolved: true
+            http_config:
+              bearer_token: 'webhook-bearer-token-change-me'
+            max_alerts: 0
+
+    # Templates for custom message formatting
+    templates:
+      - '/etc/alertmanager/templates/*.tmpl'
+
+---
+# ConfigMap for AlertManager templates
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-templates
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "0.26.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+data:
+  default.tmpl: |
+    {{ define "__subject" }}
+    [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.SortedPairs.Values | join " " }} {{ if gt (len .CommonLabels) (len .GroupLabels) }}({{ with .CommonLabels.Remove .GroupLabels.Names }}{{ .Values | join " " }}{{ end }}){{ end }}
+    {{ end }}
+
+    {{ define "__description" }}{{ range .Alerts.Firing }}{{ .Annotations.description }}{{ end }}{{ end }}
+
+    {{ define "__text_alert_list" }}{{ range . }}Labels:
+    {{ range .Labels.SortedPairs }} - {{ .Name }} = {{ .Value }}
+    {{ end }}Annotations:
+    {{ range .Annotations.SortedPairs }} - {{ .Name }} = {{ .Value }}
+    {{ end }}Source: {{ .GeneratorURL }}
+    {{ end }}{{ end }}
+
+    {{ define "slack.default.title" }}{{ template "__subject" . }}{{ end }}
+    {{ define "slack.default.username" }}AlertManager{{ end }}
+    {{ define "slack.default.fallback" }}{{ template "slack.default.title" . }} | {{ template "slack.default.titlelink" . }}{{ end }}
+    {{ define "slack.default.pretext" }}{{ .CommonAnnotations.summary }}{{ end }}
+    {{ define "slack.default.titlelink" }}{{ template "__alertmanagerURL" . }}{{ end }}
+    {{ define "slack.default.iconemoji" }}:exclamation:{{ end }}
+    {{ define "slack.default.iconurl" }}{{ end }}
+    {{ define "slack.default.text" }}{{ end }}
+
+---
+# Secret for AlertManager credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alertmanager-credentials
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "0.26.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    secrets-manager.io/secret-arn: "arn:aws:secretsmanager:us-west-2:123456789012:secret:tsiot/prod/alertmanager-credentials"
+    secrets-manager.io/auto-refresh: "true"
+    secrets-manager.io/refresh-interval: "24h"
+type: Opaque
+data:
+  smtp-password: c210cC1wYXNzd29yZC1jaGFuZ2UtbWU=  # smtp-password-change-me
+  slack-webhook: aHR0cHM6Ly9ob29rcy5zbGFjay5jb20vc2VydmljZXMvWU9VUi9TTEFDS1kvV0VCSE9PSw==  # https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+  pagerduty-service-key: cGFnZXJkdXR5LXNlcnZpY2Uta2V5LWNoYW5nZS1tZQ==  # pagerduty-service-key-change-me
+  webhook-bearer-token: d2ViaG9vay1iZWFyZXItdG9rZW4tY2hhbmdlLW1l  # webhook-bearer-token-change-me
+
+---
+# Ingress for AlertManager
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: alertmanager-ingress
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "0.26.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    kubernetes.io/ingress.class: "alb"
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/load-balancer-name: tsiot-alertmanager-alb
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-west-2:123456789012:certificate/alertmanager-12345678-1234-1234-1234-123456789012"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /-/healthy
+    alb.ingress.kubernetes.io/inbound-cidrs: "10.0.0.0/8,172.16.0.0/12"
+    # Basic Auth for AlertManager access
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: alertmanager-basic-auth
+    nginx.ingress.kubernetes.io/auth-realm: "AlertManager Access"
+spec:
+  ingressClassName: alb
+  tls:
+    - hosts:
+        - alertmanager.tsiot.com
+      secretName: alertmanager-tls-secret
+  rules:
+    - host: alertmanager.tsiot.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: alertmanager
+                port:
+                  number: 9093
+
+---
+# Basic Auth secret for AlertManager
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alertmanager-basic-auth
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "0.26.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+type: Opaque
+data:
+  auth: YWRtaW46JGFwcjEkSDY1RHpwZGkkdWpBWm9vcW1NNGxQSTBpRGVIaElHdXYuUC4K  # admin:alertmanager-password (htpasswd format)
+
+---
+# ServiceMonitor for AlertManager
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: alertmanager-monitor
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "0.26.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager
+      app.kubernetes.io/instance: tsiot
+  endpoints:
+  - port: web
+    interval: 30s
+    path: /metrics
+    scheme: http
+  namespaceSelector:
+    matchNames:
+    - tsiot-monitoring

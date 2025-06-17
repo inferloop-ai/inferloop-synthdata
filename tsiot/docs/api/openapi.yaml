@@ -1,0 +1,945 @@
+openapi: 3.0.3
+info:
+  title: TSIoT API
+  description: |
+    Time Series IoT Synthetic Data Generation API
+    
+    Generate, validate, and analyze synthetic time series data for IoT applications.
+    Supports multiple generation algorithms, quality validation, and real-time streaming.
+  version: 1.0.0
+  contact:
+    name: TSIoT Support
+    url: https://github.com/inferloop/tsiot
+    email: support@inferloop.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://tsiot-demo.inferloop.com
+    description: Demo server
+  - url: https://api.inferloop.com/tsiot
+    description: Production server
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Check if the TSIoT server is healthy and ready to accept requests
+      operationId: getHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Server is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ready:
+    get:
+      summary: Readiness check
+      description: Check if the TSIoT server is ready to handle requests
+      operationId: getReady
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Server is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '503':
+          description: Server is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/generate:
+    post:
+      summary: Generate synthetic time series data
+      description: |
+        Generate synthetic time series data using various algorithms.
+        Supports multiple generator types, sensor configurations, and data patterns.
+      operationId: generateData
+      tags:
+        - Generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRequest'
+            examples:
+              basic:
+                summary: Basic temperature data
+                value:
+                  generator: statistical
+                  sensor_type: temperature
+                  points: 1000
+                  frequency: "1m"
+              advanced:
+                summary: Advanced with anomalies
+                value:
+                  generator: timegan
+                  sensor_type: energy
+                  points: 10000
+                  anomalies: 20
+                  anomaly_magnitude: 2.5
+                  seasonality: true
+                  seasonal_period: "24h"
+      responses:
+        '200':
+          description: Data generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Generation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/validate:
+    post:
+      summary: Validate synthetic data quality
+      description: |
+        Validate the quality of synthetic time series data.
+        Compare against reference data and compute quality metrics.
+      operationId: validateData
+      tags:
+        - Validation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateRequest'
+      responses:
+        '200':
+          description: Validation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/analyze:
+    post:
+      summary: Analyze time series data
+      description: |
+        Perform comprehensive analysis of time series data.
+        Includes anomaly detection, decomposition, and forecasting.
+      operationId: analyzeData
+      tags:
+        - Analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+      responses:
+        '200':
+          description: Analysis completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisResult'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/stream:
+    get:
+      summary: Stream real-time synthetic data
+      description: |
+        Stream synthetic time series data in real-time via Server-Sent Events.
+        Suitable for real-time applications and dashboards.
+      operationId: streamData
+      tags:
+        - Streaming
+      parameters:
+        - name: generator
+          in: query
+          description: Generation algorithm
+          schema:
+            type: string
+            enum: [statistical, arima, timegan, rnn, ydata]
+            default: statistical
+        - name: sensor_type
+          in: query
+          description: Type of sensor
+          schema:
+            type: string
+            default: temperature
+        - name: frequency
+          in: query
+          description: Data frequency
+          schema:
+            type: string
+            default: "1s"
+      responses:
+        '200':
+          description: Stream started
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Invalid stream parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/jobs:
+    get:
+      summary: List generation jobs
+      description: Get a list of all generation jobs
+      operationId: listJobs
+      tags:
+        - Jobs
+      parameters:
+        - name: status
+          in: query
+          description: Filter by job status
+          schema:
+            type: string
+            enum: [pending, running, completed, failed]
+        - name: limit
+          in: query
+          description: Maximum number of jobs to return
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobList'
+
+  /api/v1/jobs/{jobId}:
+    get:
+      summary: Get job status
+      description: Get the status and details of a specific generation job
+      operationId: getJob
+      tags:
+        - Jobs
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          description: Job identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/generators:
+    get:
+      summary: List available generators
+      description: Get information about available generation algorithms
+      operationId: listGenerators
+      tags:
+        - Generators
+      responses:
+        '200':
+          description: List of generators
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeneratorList'
+
+  /api/v1/sensors:
+    get:
+      summary: List sensor types
+      description: Get information about supported sensor types
+      operationId: listSensorTypes
+      tags:
+        - Sensors
+      responses:
+        '200':
+          description: List of sensor types
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SensorTypeList'
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        uptime:
+          type: string
+      required:
+        - status
+        - timestamp
+
+    ReadyResponse:
+      type: object
+      properties:
+        ready:
+          type: boolean
+        services:
+          type: object
+          additionalProperties:
+            type: string
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - ready
+        - timestamp
+
+    GenerateRequest:
+      type: object
+      properties:
+        generator:
+          type: string
+          enum: [statistical, arima, timegan, rnn, ydata]
+          default: statistical
+          description: Generation algorithm to use
+        sensor_type:
+          type: string
+          default: temperature
+          description: Type of sensor data to generate
+        sensor_id:
+          type: string
+          description: Unique sensor identifier
+        points:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+          default: 100
+          description: Number of data points to generate
+        start_time:
+          type: string
+          format: date-time
+          description: Start timestamp for generation
+        end_time:
+          type: string
+          format: date-time
+          description: End timestamp for generation
+        duration:
+          type: string
+          default: "24h"
+          description: Duration for generation (e.g., "24h", "7d")
+        frequency:
+          type: string
+          default: "1m"
+          description: Data frequency (e.g., "1s", "5m", "1h")
+        anomalies:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Number of anomalies to inject
+        anomaly_magnitude:
+          type: number
+          minimum: 0
+          default: 3.0
+          description: Anomaly magnitude in standard deviations
+        noise_level:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.05
+          description: Noise level (0.0 to 1.0)
+        trend:
+          type: number
+          default: 0.0
+          description: Trend coefficient
+        seasonality:
+          type: boolean
+          default: false
+          description: Enable seasonal patterns
+        seasonal_period:
+          type: string
+          default: "24h"
+          description: Seasonal period
+        seed:
+          type: integer
+          description: Random seed for reproducibility
+        privacy:
+          type: boolean
+          default: false
+          description: Enable privacy-preserving generation
+        privacy_epsilon:
+          type: number
+          minimum: 0
+          default: 1.0
+          description: Privacy budget parameter
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Additional metadata
+        custom_params:
+          type: object
+          additionalProperties: true
+          description: Custom generator parameters
+      required:
+        - generator
+        - sensor_type
+
+    GenerateResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          description: Unique job identifier
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        data:
+          $ref: '#/components/schemas/TimeSeriesData'
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+      required:
+        - job_id
+        - status
+        - created_at
+
+    TimeSeriesData:
+      type: object
+      properties:
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataPoint'
+        metadata:
+          type: object
+          additionalProperties: true
+        summary:
+          $ref: '#/components/schemas/DataSummary'
+      required:
+        - points
+
+    DataPoint:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        sensor_id:
+          type: string
+        sensor_type:
+          type: string
+        value:
+          type: number
+        unit:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+        - timestamp
+        - sensor_id
+        - sensor_type
+        - value
+
+    DataSummary:
+      type: object
+      properties:
+        count:
+          type: integer
+        mean:
+          type: number
+        std:
+          type: number
+        min:
+          type: number
+        max:
+          type: number
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+      required:
+        - count
+        - mean
+        - std
+        - min
+        - max
+
+    ValidateRequest:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/TimeSeriesData'
+        data_url:
+          type: string
+          format: uri
+          description: URL to data file
+        reference:
+          $ref: '#/components/schemas/TimeSeriesData'
+        reference_url:
+          type: string
+          format: uri
+          description: URL to reference data file
+        metrics:
+          type: array
+          items:
+            type: string
+            enum: [basic, distribution, temporal, similarity, privacy]
+          default: [basic]
+        statistical_tests:
+          type: array
+          items:
+            type: string
+            enum: [ks, anderson, ljung_box, jarque_bera]
+          default: [ks]
+        quality_threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.8
+      anyOf:
+        - required: [data]
+        - required: [data_url]
+
+    ValidationResult:
+      type: object
+      properties:
+        quality_score:
+          type: number
+          minimum: 0
+          maximum: 1
+        metrics:
+          type: object
+          additionalProperties:
+            type: number
+        statistical_tests:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/TestResult'
+        anomalies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Anomaly'
+        recommendations:
+          type: array
+          items:
+            type: string
+        passed:
+          type: boolean
+        report_url:
+          type: string
+          format: uri
+      required:
+        - quality_score
+        - metrics
+        - passed
+
+    TestResult:
+      type: object
+      properties:
+        statistic:
+          type: number
+        p_value:
+          type: number
+        passed:
+          type: boolean
+        critical_value:
+          type: number
+      required:
+        - statistic
+        - p_value
+        - passed
+
+    Anomaly:
+      type: object
+      properties:
+        index:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+        value:
+          type: number
+        score:
+          type: number
+        type:
+          type: string
+          enum: [spike, drift, noise, pattern]
+      required:
+        - index
+        - timestamp
+        - value
+        - score
+        - type
+
+    AnalyzeRequest:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/TimeSeriesData'
+        data_url:
+          type: string
+          format: uri
+        detect_anomalies:
+          type: boolean
+          default: false
+        anomaly_method:
+          type: string
+          enum: [isolation_forest, one_class_svm, local_outlier_factor]
+          default: isolation_forest
+        decompose:
+          type: boolean
+          default: false
+        forecast:
+          type: boolean
+          default: false
+        forecast_periods:
+          type: integer
+          minimum: 1
+          default: 10
+        patterns:
+          type: boolean
+          default: false
+      anyOf:
+        - required: [data]
+        - required: [data_url]
+
+    AnalysisResult:
+      type: object
+      properties:
+        summary_stats:
+          type: object
+          additionalProperties:
+            type: number
+        anomalies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Anomaly'
+        decomposition:
+          $ref: '#/components/schemas/Decomposition'
+        forecast:
+          $ref: '#/components/schemas/Forecast'
+        patterns:
+          type: array
+          items:
+            $ref: '#/components/schemas/Pattern'
+      required:
+        - summary_stats
+
+    Decomposition:
+      type: object
+      properties:
+        trend:
+          type: array
+          items:
+            type: number
+        seasonal:
+          type: array
+          items:
+            type: number
+        residual:
+          type: array
+          items:
+            type: number
+        period:
+          type: integer
+      required:
+        - trend
+        - seasonal
+        - residual
+
+    Forecast:
+      type: object
+      properties:
+        values:
+          type: array
+          items:
+            type: number
+        timestamps:
+          type: array
+          items:
+            type: string
+            format: date-time
+        confidence_lower:
+          type: array
+          items:
+            type: number
+        confidence_upper:
+          type: array
+          items:
+            type: number
+        method:
+          type: string
+      required:
+        - values
+        - timestamps
+        - method
+
+    Pattern:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [seasonal, trend, cycle, anomaly]
+        start_index:
+          type: integer
+        end_index:
+          type: integer
+        score:
+          type: number
+        parameters:
+          type: object
+          additionalProperties: true
+      required:
+        - type
+        - start_index
+        - end_index
+        - score
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        request:
+          $ref: '#/components/schemas/GenerateRequest'
+        result:
+          $ref: '#/components/schemas/GenerateResponse'
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        error:
+          type: string
+      required:
+        - id
+        - status
+        - created_at
+
+    JobList:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required:
+        - jobs
+        - total
+
+    GeneratorInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        parameters:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ParameterInfo'
+        supported_sensor_types:
+          type: array
+          items:
+            type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+      required:
+        - name
+        - description
+
+    ParameterInfo:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [string, number, integer, boolean, array, object]
+        description:
+          type: string
+        default:
+          description: Default value
+        minimum:
+          type: number
+        maximum:
+          type: number
+        enum:
+          type: array
+          items:
+            type: string
+      required:
+        - type
+        - description
+
+    GeneratorList:
+      type: object
+      properties:
+        generators:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeneratorInfo'
+      required:
+        - generators
+
+    SensorType:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        unit:
+          type: string
+        value_range:
+          type: object
+          properties:
+            min:
+              type: number
+            max:
+              type: number
+        typical_frequencies:
+          type: array
+          items:
+            type: string
+      required:
+        - name
+        - description
+        - unit
+
+    SensorTypeList:
+      type: object
+      properties:
+        sensor_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/SensorType'
+      required:
+        - sensor_types
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        code:
+          type: integer
+        details:
+          type: object
+          additionalProperties: true
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - error
+        - message
+        - timestamp
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - ApiKeyAuth: []
+  - BearerAuth: []
+  - {}
+
+tags:
+  - name: Health
+    description: Health and readiness checks
+  - name: Generation
+    description: Synthetic data generation operations
+  - name: Validation
+    description: Data quality validation
+  - name: Analysis
+    description: Time series analysis
+  - name: Streaming
+    description: Real-time data streaming
+  - name: Jobs
+    description: Job management
+  - name: Generators
+    description: Generator information
+  - name: Sensors
+    description: Sensor type information

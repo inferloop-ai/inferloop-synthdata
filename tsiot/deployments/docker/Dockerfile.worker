@@ -1,0 +1,124 @@
+# Multi-stage build for TSIoT Worker
+# Build stage
+FROM golang:1.21-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    git \
+    make \
+    bash \
+    gcc \
+    musl-dev \
+    ca-certificates \
+    tzdata \
+    pkgconfig
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod and sum files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download && go mod verify
+
+# Copy source code
+COPY . .
+
+# Build the worker binary
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-w -s -X main.version=$(git describe --tags --always --dirty) -X main.commit=$(git rev-parse HEAD) -X main.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    -a -installsuffix cgo \
+    -o tsiot-worker \
+    ./cmd/worker
+
+# Production stage
+FROM alpine:3.18
+
+# Install runtime dependencies for ML and data processing
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    curl \
+    jq \
+    bash \
+    python3 \
+    py3-pip \
+    py3-numpy \
+    py3-scipy \
+    openblas \
+    lapack \
+    && update-ca-certificates
+
+# Install Python ML libraries
+RUN pip3 install --no-cache-dir \
+    pandas \
+    scikit-learn \
+    tensorflow-cpu \
+    torch \
+    torchvision \
+    torchaudio \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# Create non-root user
+RUN addgroup -g 1001 -S tsiot && \
+    adduser -u 1001 -S tsiot -G tsiot
+
+# Set working directory
+WORKDIR /app
+
+# Copy binary from builder stage
+COPY --from=builder /app/tsiot-worker /usr/local/bin/tsiot-worker
+
+# Copy configuration files
+COPY --from=builder /app/configs /app/configs
+
+# Create necessary directories
+RUN mkdir -p \
+    /app/data \
+    /app/logs \
+    /app/tmp \
+    /app/models \
+    /app/cache \
+    /app/work \
+    && chown -R tsiot:tsiot /app
+
+# Set environment variables
+ENV TZ=UTC
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV GOMEMLIMIT=4GiB
+ENV GOMAXPROCS=4
+
+# Configure worker settings
+ENV WORKER_CONCURRENCY=4
+ENV WORKER_QUEUE_SIZE=1000
+ENV WORKER_BATCH_SIZE=100
+ENV WORKER_TIMEOUT=300s
+ENV WORKER_HEARTBEAT=30s
+
+# Switch to non-root user
+USER tsiot
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8081/health || exit 1
+
+# Expose health check port
+EXPOSE 8081
+
+# Set entrypoint
+ENTRYPOINT ["tsiot-worker"]
+
+# Default command
+CMD ["--config", "/app/configs/environments/production.yaml"]
+
+# Labels
+LABEL maintainer="TSIoT Team"
+LABEL version="1.0.0"
+LABEL description="TSIoT Worker for background data processing and ML tasks"
+LABEL org.opencontainers.image.title="TSIoT Worker"
+LABEL org.opencontainers.image.description="Background worker for TSIoT platform"
+LABEL org.opencontainers.image.vendor="TSIoT"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/tsiot/tsiot"

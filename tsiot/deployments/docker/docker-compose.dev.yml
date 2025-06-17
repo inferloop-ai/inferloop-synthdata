@@ -1,0 +1,424 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: timescale/timescaledb:2.11.2-pg15
+    container_name: tsiot-postgres-dev
+    environment:
+      POSTGRES_DB: tsiot_dev
+      POSTGRES_USER: tsiot_user
+      POSTGRES_PASSWORD: tsiot_password
+      TIMESCALEDB_TELEMETRY: 'off'
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/postgres:/docker-entrypoint-initdb.d
+    networks:
+      - tsiot-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tsiot_user -d tsiot_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7.2-alpine
+    container_name: tsiot-redis-dev
+    command: redis-server --appendonly yes --requirepass tsiot_redis_password
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./configs/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - tsiot-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Apache Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: tsiot-zookeeper-dev
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    networks:
+      - tsiot-network
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: tsiot-kafka-dev
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 1
+      KAFKA_CONFLUENT_METRICS_ENABLE: 'false'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - tsiot-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # InfluxDB for Time Series Data
+  influxdb:
+    image: influxdb:2.7
+    container_name: tsiot-influxdb-dev
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: tsiot_admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: tsiot_influx_password
+      DOCKER_INFLUXDB_INIT_ORG: tsiot
+      DOCKER_INFLUXDB_INIT_BUCKET: timeseries_dev
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: tsiot-dev-token-12345
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+      - influxdb_config:/etc/influxdb2
+    networks:
+      - tsiot-network
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # Elasticsearch for Search and Analytics
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.9.0
+    container_name: tsiot-elasticsearch-dev
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - tsiot-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # MQTT Broker (Eclipse Mosquitto)
+  mosquitto:
+    image: eclipse-mosquitto:2.0.15
+    container_name: tsiot-mosquitto-dev
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+      - ./configs/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+    networks:
+      - tsiot-network
+    restart: unless-stopped
+
+  # Minio for S3-compatible object storage
+  minio:
+    image: minio/minio:latest
+    container_name: tsiot-minio-dev
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: tsiot_minio_user
+      MINIO_ROOT_PASSWORD: tsiot_minio_password
+    ports:
+      - "9000:9000"
+      - "9090:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - tsiot-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+
+  # TSIoT Server
+  tsiot-server:
+    build:
+      context: ../../
+      dockerfile: deployments/docker/Dockerfile.server
+    container_name: tsiot-server-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    environment:
+      # Application Environment
+      - TSIOT_ENV=development
+      - TSIOT_LOG_LEVEL=debug
+      
+      # Server Configuration
+      - TSIOT_SERVER_HOST=0.0.0.0
+      - TSIOT_SERVER_PORT=8080
+      - TSIOT_SERVER_GRPC_PORT=9090
+      
+      # Database Configuration
+      - TSIOT_DB_HOST=postgres
+      - TSIOT_DB_PORT=5432
+      - TSIOT_DB_NAME=tsiot_dev
+      - TSIOT_DB_USER=tsiot_user
+      - TSIOT_DB_PASSWORD=tsiot_password
+      - TSIOT_DB_SSL_MODE=disable
+      
+      # Redis Configuration
+      - TSIOT_REDIS_HOST=redis
+      - TSIOT_REDIS_PORT=6379
+      - TSIOT_REDIS_PASSWORD=tsiot_redis_password
+      - TSIOT_REDIS_DB=0
+      
+      # Kafka Configuration
+      - TSIOT_KAFKA_BROKERS=kafka:29092
+      - TSIOT_KAFKA_CONSUMER_GROUP=tsiot-dev
+      
+      # InfluxDB Configuration
+      - TSIOT_INFLUXDB_URL=http://influxdb:8086
+      - TSIOT_INFLUXDB_TOKEN=tsiot-dev-token-12345
+      - TSIOT_INFLUXDB_ORG=tsiot
+      - TSIOT_INFLUXDB_BUCKET=timeseries_dev
+      
+      # Elasticsearch Configuration
+      - TSIOT_ELASTICSEARCH_URL=http://elasticsearch:9200
+      
+      # MQTT Configuration
+      - TSIOT_MQTT_BROKER=tcp://mosquitto:1883
+      
+      # S3 Configuration (MinIO)
+      - TSIOT_S3_ENDPOINT=http://minio:9000
+      - TSIOT_S3_ACCESS_KEY=tsiot_minio_user
+      - TSIOT_S3_SECRET_KEY=tsiot_minio_password
+      - TSIOT_S3_BUCKET=tsiot-data-dev
+      - TSIOT_S3_REGION=us-east-1
+      - TSIOT_S3_USE_SSL=false
+      
+      # Security
+      - TSIOT_JWT_SECRET=dev-jwt-secret-key-12345
+      - TSIOT_ENCRYPTION_KEY=dev-encryption-key-32-characters
+      
+      # Features
+      - TSIOT_ENABLE_METRICS=true
+      - TSIOT_ENABLE_TRACING=true
+      - TSIOT_ENABLE_PROFILING=true
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+      - "6060:6060"  # pprof
+    volumes:
+      - ./configs:/app/configs:ro
+      - server_data:/app/data
+      - server_logs:/app/logs
+    networks:
+      - tsiot-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ../../cmd/server
+        - action: rebuild
+          path: ../../internal
+        - action: sync
+          path: ../../configs
+          target: /app/configs
+
+  # TSIoT Worker
+  tsiot-worker:
+    build:
+      context: ../../
+      dockerfile: deployments/docker/Dockerfile.worker
+    container_name: tsiot-worker-dev
+    depends_on:
+      tsiot-server:
+        condition: service_healthy
+    environment:
+      # Inherit most config from server
+      - TSIOT_ENV=development
+      - TSIOT_LOG_LEVEL=debug
+      - TSIOT_WORKER_CONCURRENCY=2
+      - TSIOT_WORKER_QUEUE_SIZE=100
+      - TSIOT_WORKER_BATCH_SIZE=10
+      
+      # Database Configuration
+      - TSIOT_DB_HOST=postgres
+      - TSIOT_DB_PORT=5432
+      - TSIOT_DB_NAME=tsiot_dev
+      - TSIOT_DB_USER=tsiot_user
+      - TSIOT_DB_PASSWORD=tsiot_password
+      
+      # Redis Configuration
+      - TSIOT_REDIS_HOST=redis
+      - TSIOT_REDIS_PORT=6379
+      - TSIOT_REDIS_PASSWORD=tsiot_redis_password
+      
+      # Kafka Configuration
+      - TSIOT_KAFKA_BROKERS=kafka:29092
+      - TSIOT_KAFKA_CONSUMER_GROUP=tsiot-workers-dev
+    ports:
+      - "8081:8081"  # Health check
+    volumes:
+      - ./configs:/app/configs:ro
+      - worker_data:/app/data
+      - worker_logs:/app/logs
+      - worker_models:/app/models
+    networks:
+      - tsiot-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ../../cmd/worker
+        - action: rebuild
+          path: ../../internal
+        - action: sync
+          path: ../../configs
+          target: /app/configs
+
+  # Monitoring Stack
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: tsiot-prometheus-dev
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9191:9090"
+    volumes:
+      - ./configs/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - tsiot-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: tsiot-grafana-dev
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=tsiot_grafana_password
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./configs/monitoring/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/tsiot-dashboard.json:ro
+    networks:
+      - tsiot-network
+    restart: unless-stopped
+
+  # Development Tools
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: tsiot-mailhog-dev
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - tsiot-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  zookeeper_data:
+    driver: local
+  zookeeper_logs:
+    driver: local
+  kafka_data:
+    driver: local
+  influxdb_data:
+    driver: local
+  influxdb_config:
+    driver: local
+  elasticsearch_data:
+    driver: local
+  mosquitto_data:
+    driver: local
+  mosquitto_logs:
+    driver: local
+  minio_data:
+    driver: local
+  server_data:
+    driver: local
+  server_logs:
+    driver: local
+  worker_data:
+    driver: local
+  worker_logs:
+    driver: local
+  worker_models:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  tsiot-network:
+    driver: bridge
+    name: tsiot-dev-network
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

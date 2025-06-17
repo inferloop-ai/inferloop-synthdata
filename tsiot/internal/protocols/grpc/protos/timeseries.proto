@@ -1,0 +1,509 @@
+syntax = "proto3";
+
+package tsiot.timeseries;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/inferloop/tsiot/internal/protocols/grpc/protos/timeseries";
+
+// TimeSeriesService provides gRPC endpoints for time series data operations
+service TimeSeriesService {
+  // Publish a single time series data point
+  rpc PublishTimeSeries(PublishTimeSeriesRequest) returns (PublishTimeSeriesResponse);
+  
+  // Publish a batch of time series data points
+  rpc PublishTimeSeriesBatch(PublishTimeSeriesBatchRequest) returns (PublishTimeSeriesBatchResponse);
+  
+  // Stream time series data (bidirectional streaming)
+  rpc StreamTimeSeries(stream StreamTimeSeriesRequest) returns (stream StreamTimeSeriesResponse);
+  
+  // Subscribe to time series data (server streaming)
+  rpc SubscribeTimeSeries(SubscribeTimeSeriesRequest) returns (stream TimeSeriesData);
+  
+  // Query time series data
+  rpc QueryTimeSeries(QueryTimeSeriesRequest) returns (QueryTimeSeriesResponse);
+  
+  // Get time series metadata
+  rpc GetTimeSeriesMetadata(GetTimeSeriesMetadataRequest) returns (GetTimeSeriesMetadataResponse);
+  
+  // Health check
+  rpc HealthCheck(google.protobuf.Empty) returns (HealthCheckResponse);
+}
+
+// TimeSeriesData represents a single time series data point
+message TimeSeriesData {
+  string id = 1;
+  string sensor_id = 2;
+  string sensor_type = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  double value = 5;
+  double quality = 6;
+  string unit = 7;
+  string location = 8;
+  map<string, string> tags = 9;
+  map<string, string> metadata = 10;
+  google.protobuf.Timestamp created_at = 11;
+}
+
+// TimeSeriesBatch represents a batch of time series data points
+message TimeSeriesBatch {
+  string batch_id = 1;
+  repeated TimeSeriesData readings = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  string source = 4;
+  map<string, string> metadata = 5;
+  int32 count = 6;
+}
+
+// PublishTimeSeriesRequest contains a single time series data point to publish
+message PublishTimeSeriesRequest {
+  TimeSeriesData data = 1;
+  string topic = 2;
+  PublishOptions options = 3;
+}
+
+// PublishTimeSeriesResponse contains the result of publishing a time series data point
+message PublishTimeSeriesResponse {
+  bool success = 1;
+  string message_id = 2;
+  string error_message = 3;
+  google.protobuf.Timestamp processed_at = 4;
+  PublishMetrics metrics = 5;
+}
+
+// PublishTimeSeriesBatchRequest contains a batch of time series data to publish
+message PublishTimeSeriesBatchRequest {
+  TimeSeriesBatch batch = 1;
+  string topic = 2;
+  PublishOptions options = 3;
+}
+
+// PublishTimeSeriesBatchResponse contains the result of publishing a batch
+message PublishTimeSeriesBatchResponse {
+  bool success = 1;
+  string batch_id = 2;
+  int32 published_count = 3;
+  int32 failed_count = 4;
+  repeated string failed_ids = 5;
+  string error_message = 6;
+  google.protobuf.Timestamp processed_at = 7;
+  PublishMetrics metrics = 8;
+}
+
+// StreamTimeSeriesRequest for bidirectional streaming
+message StreamTimeSeriesRequest {
+  oneof request {
+    StreamConfig config = 1;
+    TimeSeriesData data = 2;
+    TimeSeriesBatch batch = 3;
+    StreamControl control = 4;
+  }
+}
+
+// StreamTimeSeriesResponse for bidirectional streaming
+message StreamTimeSeriesResponse {
+  oneof response {
+    StreamStatus status = 1;
+    TimeSeriesData data = 2;
+    StreamMetrics metrics = 3;
+    StreamError error = 4;
+  }
+}
+
+// SubscribeTimeSeriesRequest for server streaming subscription
+message SubscribeTimeSeriesRequest {
+  repeated string sensor_ids = 1;
+  repeated string sensor_types = 2;
+  TimeRange time_range = 3;
+  FilterOptions filters = 4;
+  SubscriptionOptions options = 5;
+}
+
+// QueryTimeSeriesRequest for querying historical data
+message QueryTimeSeriesRequest {
+  repeated string sensor_ids = 1;
+  repeated string sensor_types = 2;
+  TimeRange time_range = 3;
+  FilterOptions filters = 4;
+  AggregationOptions aggregation = 5;
+  PaginationOptions pagination = 6;
+  QueryOptions options = 7;
+}
+
+// QueryTimeSeriesResponse contains query results
+message QueryTimeSeriesResponse {
+  repeated TimeSeriesData data = 1;
+  QueryMetadata metadata = 2;
+  PaginationInfo pagination = 3;
+  AggregationResults aggregation_results = 4;
+}
+
+// GetTimeSeriesMetadataRequest for retrieving metadata
+message GetTimeSeriesMetadataRequest {
+  repeated string sensor_ids = 1;
+  repeated string sensor_types = 2;
+  bool include_schema = 3;
+  bool include_statistics = 4;
+}
+
+// GetTimeSeriesMetadataResponse contains metadata
+message GetTimeSeriesMetadataResponse {
+  repeated SensorMetadata sensors = 1;
+  repeated TypeMetadata types = 2;
+  SchemaInfo schema = 3;
+  StatisticsInfo statistics = 4;
+}
+
+// Supporting message types
+
+// PublishOptions contains options for publishing
+message PublishOptions {
+  bool async = 1;
+  bool validate = 2;
+  bool compress = 3;
+  int32 timeout_seconds = 4;
+  string compression_type = 5;
+  map<string, string> headers = 6;
+}
+
+// PublishMetrics contains publishing metrics
+message PublishMetrics {
+  int64 bytes_sent = 1;
+  int64 processing_time_ms = 2;
+  double compression_ratio = 3;
+  string endpoint = 4;
+}
+
+// StreamConfig configures streaming behavior
+message StreamConfig {
+  string stream_id = 1;
+  StreamMode mode = 2;
+  int32 buffer_size = 3;
+  int32 batch_size = 4;
+  int32 flush_interval_ms = 5;
+  bool enable_compression = 6;
+  FilterOptions filters = 7;
+}
+
+// StreamMode defines streaming modes
+enum StreamMode {
+  STREAM_MODE_UNSPECIFIED = 0;
+  STREAM_MODE_REALTIME = 1;
+  STREAM_MODE_BATCH = 2;
+  STREAM_MODE_REPLAY = 3;
+}
+
+// StreamControl for controlling stream behavior
+message StreamControl {
+  StreamControlType type = 1;
+  string stream_id = 2;
+  map<string, string> parameters = 3;
+}
+
+// StreamControlType defines control operations
+enum StreamControlType {
+  STREAM_CONTROL_TYPE_UNSPECIFIED = 0;
+  STREAM_CONTROL_TYPE_START = 1;
+  STREAM_CONTROL_TYPE_STOP = 2;
+  STREAM_CONTROL_TYPE_PAUSE = 3;
+  STREAM_CONTROL_TYPE_RESUME = 4;
+  STREAM_CONTROL_TYPE_CONFIGURE = 5;
+}
+
+// StreamStatus provides stream status information
+message StreamStatus {
+  string stream_id = 1;
+  StreamState state = 2;
+  string message = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  StreamMetrics metrics = 5;
+}
+
+// StreamState defines stream states
+enum StreamState {
+  STREAM_STATE_UNSPECIFIED = 0;
+  STREAM_STATE_STARTING = 1;
+  STREAM_STATE_RUNNING = 2;
+  STREAM_STATE_PAUSED = 3;
+  STREAM_STATE_STOPPING = 4;
+  STREAM_STATE_STOPPED = 5;
+  STREAM_STATE_ERROR = 6;
+}
+
+// StreamMetrics contains streaming metrics
+message StreamMetrics {
+  int64 messages_sent = 1;
+  int64 messages_received = 2;
+  int64 bytes_transferred = 3;
+  double throughput_per_second = 4;
+  int64 buffer_usage = 5;
+  google.protobuf.Timestamp last_activity = 6;
+}
+
+// StreamError represents streaming errors
+message StreamError {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  map<string, string> details = 5;
+}
+
+// TimeRange specifies a time range for queries
+message TimeRange {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+  string timezone = 3;
+}
+
+// FilterOptions for filtering time series data
+message FilterOptions {
+  repeated ValueFilter value_filters = 1;
+  repeated TagFilter tag_filters = 2;
+  QualityFilter quality_filter = 3;
+  LocationFilter location_filter = 4;
+  map<string, string> custom_filters = 5;
+}
+
+// ValueFilter for filtering by value
+message ValueFilter {
+  string field = 1;
+  FilterOperator operator = 2;
+  double value = 3;
+  repeated double values = 4;
+}
+
+// FilterOperator defines filter operations
+enum FilterOperator {
+  FILTER_OPERATOR_UNSPECIFIED = 0;
+  FILTER_OPERATOR_EQ = 1;    // Equal
+  FILTER_OPERATOR_NE = 2;    // Not equal
+  FILTER_OPERATOR_GT = 3;    // Greater than
+  FILTER_OPERATOR_GTE = 4;   // Greater than or equal
+  FILTER_OPERATOR_LT = 5;    // Less than
+  FILTER_OPERATOR_LTE = 6;   // Less than or equal
+  FILTER_OPERATOR_IN = 7;    // In list
+  FILTER_OPERATOR_NOT_IN = 8; // Not in list
+}
+
+// TagFilter for filtering by tags
+message TagFilter {
+  string key = 1;
+  FilterOperator operator = 2;
+  string value = 3;
+  repeated string values = 4;
+}
+
+// QualityFilter for filtering by quality
+message QualityFilter {
+  double min_quality = 1;
+  double max_quality = 2;
+  bool exclude_invalid = 3;
+}
+
+// LocationFilter for filtering by location
+message LocationFilter {
+  string location = 1;
+  double radius_km = 2;
+  GeoPoint center = 3;
+  repeated GeoPoint polygon = 4;
+}
+
+// GeoPoint represents a geographic point
+message GeoPoint {
+  double latitude = 1;
+  double longitude = 2;
+  double altitude = 3;
+}
+
+// SubscriptionOptions for configuring subscriptions
+message SubscriptionOptions {
+  bool include_historical = 1;
+  int32 max_message_rate = 2;
+  int32 buffer_size = 3;
+  bool enable_compression = 4;
+  FilterOptions real_time_filters = 5;
+}
+
+// AggregationOptions for data aggregation
+message AggregationOptions {
+  repeated AggregationFunction functions = 1;
+  string group_by_time = 2;
+  repeated string group_by_tags = 3;
+  bool fill_missing = 4;
+  double fill_value = 5;
+}
+
+// AggregationFunction defines aggregation operations
+enum AggregationFunction {
+  AGGREGATION_FUNCTION_UNSPECIFIED = 0;
+  AGGREGATION_FUNCTION_MEAN = 1;
+  AGGREGATION_FUNCTION_SUM = 2;
+  AGGREGATION_FUNCTION_COUNT = 3;
+  AGGREGATION_FUNCTION_MIN = 4;
+  AGGREGATION_FUNCTION_MAX = 5;
+  AGGREGATION_FUNCTION_STDDEV = 6;
+  AGGREGATION_FUNCTION_MEDIAN = 7;
+  AGGREGATION_FUNCTION_PERCENTILE = 8;
+  AGGREGATION_FUNCTION_FIRST = 9;
+  AGGREGATION_FUNCTION_LAST = 10;
+}
+
+// PaginationOptions for paginating results
+message PaginationOptions {
+  int32 page_size = 1;
+  string page_token = 2;
+  int32 offset = 3;
+  string sort_field = 4;
+  SortOrder sort_order = 5;
+}
+
+// SortOrder defines sort directions
+enum SortOrder {
+  SORT_ORDER_UNSPECIFIED = 0;
+  SORT_ORDER_ASC = 1;
+  SORT_ORDER_DESC = 2;
+}
+
+// QueryOptions for configuring queries
+message QueryOptions {
+  bool include_metadata = 1;
+  bool include_aggregations = 2;
+  int32 timeout_seconds = 3;
+  bool enable_caching = 4;
+  string cache_ttl = 5;
+}
+
+// QueryMetadata contains query execution metadata
+message QueryMetadata {
+  int64 total_count = 1;
+  int64 execution_time_ms = 2;
+  string query_id = 3;
+  google.protobuf.Timestamp executed_at = 4;
+  bool from_cache = 5;
+  string cache_key = 6;
+  map<string, string> execution_plan = 7;
+}
+
+// PaginationInfo contains pagination information
+message PaginationInfo {
+  string next_page_token = 1;
+  string previous_page_token = 2;
+  int32 total_pages = 3;
+  int32 current_page = 4;
+  bool has_more = 5;
+}
+
+// AggregationResults contains aggregation results
+message AggregationResults {
+  repeated AggregationResult results = 1;
+  map<string, string> metadata = 2;
+}
+
+// AggregationResult represents a single aggregation result
+message AggregationResult {
+  AggregationFunction function = 1;
+  string field = 2;
+  double value = 3;
+  int64 count = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  map<string, string> group_by = 6;
+}
+
+// SensorMetadata contains metadata about sensors
+message SensorMetadata {
+  string sensor_id = 1;
+  string sensor_type = 2;
+  string description = 3;
+  string unit = 4;
+  string location = 5;
+  map<string, string> tags = 6;
+  ValueRange value_range = 7;
+  double sampling_rate = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  SensorStatus status = 11;
+}
+
+// SensorStatus defines sensor status
+enum SensorStatus {
+  SENSOR_STATUS_UNSPECIFIED = 0;
+  SENSOR_STATUS_ACTIVE = 1;
+  SENSOR_STATUS_INACTIVE = 2;
+  SENSOR_STATUS_MAINTENANCE = 3;
+  SENSOR_STATUS_ERROR = 4;
+}
+
+// ValueRange defines the expected range of values
+message ValueRange {
+  double min_value = 1;
+  double max_value = 2;
+  double typical_min = 3;
+  double typical_max = 4;
+}
+
+// TypeMetadata contains metadata about sensor types
+message TypeMetadata {
+  string sensor_type = 1;
+  string description = 2;
+  string unit = 3;
+  ValueRange value_range = 4;
+  repeated string common_tags = 5;
+  SchemaDefinition schema = 6;
+}
+
+// SchemaInfo contains schema information
+message SchemaInfo {
+  string version = 1;
+  repeated SchemaDefinition definitions = 2;
+  map<string, string> metadata = 3;
+}
+
+// SchemaDefinition defines the schema for a data type
+message SchemaDefinition {
+  string name = 1;
+  string type = 2;
+  bool required = 3;
+  string description = 4;
+  repeated string enum_values = 5;
+  ValueRange value_range = 6;
+  string pattern = 7;
+}
+
+// StatisticsInfo contains statistical information
+message StatisticsInfo {
+  int64 total_sensors = 1;
+  int64 total_data_points = 2;
+  map<string, int64> sensors_by_type = 3;
+  map<string, int64> data_points_by_type = 4;
+  google.protobuf.Timestamp earliest_timestamp = 5;
+  google.protobuf.Timestamp latest_timestamp = 6;
+  double average_sampling_rate = 7;
+}
+
+// HealthCheckResponse for health checks
+message HealthCheckResponse {
+  HealthStatus status = 1;
+  string message = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  map<string, string> details = 4;
+  repeated ServiceHealth services = 5;
+}
+
+// HealthStatus defines health status
+enum HealthStatus {
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  HEALTH_STATUS_HEALTHY = 1;
+  HEALTH_STATUS_DEGRADED = 2;
+  HEALTH_STATUS_UNHEALTHY = 3;
+}
+
+// ServiceHealth contains health information for individual services
+message ServiceHealth {
+  string name = 1;
+  HealthStatus status = 2;
+  string message = 3;
+  google.protobuf.Timestamp last_check = 4;
+  map<string, string> metrics = 5;
+}

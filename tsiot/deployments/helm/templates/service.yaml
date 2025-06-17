@@ -1,0 +1,244 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tsiot.fullname" . }}
+  labels:
+    {{- include "tsiot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- if .Values.service.clusterIP }}
+  clusterIP: {{ .Values.service.clusterIP }}
+  {{- end }}
+  {{- if .Values.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.service.loadBalancerIP }}
+  {{- end }}
+  {{- if .Values.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- with .Values.service.loadBalancerSourceRanges }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+  {{- if .Values.service.externalIPs }}
+  externalIPs:
+    {{- with .Values.service.externalIPs }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+  {{- if .Values.service.sessionAffinity }}
+  sessionAffinity: {{ .Values.service.sessionAffinity }}
+  {{- if .Values.service.sessionAffinityConfig }}
+  sessionAffinityConfig:
+    {{- toYaml .Values.service.sessionAffinityConfig | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+      {{- if and (or (eq .Values.service.type "NodePort") (eq .Values.service.type "LoadBalancer")) .Values.service.nodePort }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
+    {{- if .Values.metrics.enabled }}
+    - port: {{ .Values.metrics.service.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+      {{- if and (or (eq .Values.service.type "NodePort") (eq .Values.service.type "LoadBalancer")) .Values.metrics.service.nodePort }}
+      nodePort: {{ .Values.metrics.service.nodePort }}
+      {{- end }}
+    {{- end }}
+    {{- if .Values.service.extraPorts }}
+    {{- with .Values.service.extraPorts }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- end }}
+  selector:
+    {{- include "tsiot.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+
+---
+{{- if .Values.service.headless.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tsiot.fullname" . }}-headless
+  labels:
+    {{- include "tsiot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  {{- with .Values.service.headless.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    {{- if .Values.metrics.enabled }}
+    - port: {{ .Values.metrics.service.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+    {{- end }}
+  selector:
+    {{- include "tsiot.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+{{- end }}
+
+---
+{{- if .Values.workers.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tsiot.fullname" . }}-worker
+  labels:
+    {{- include "tsiot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+  annotations:
+    {{- with .Values.workers.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: {{ .Values.workers.service.type }}
+  ports:
+    - port: {{ .Values.workers.service.port }}
+      targetPort: worker-metrics
+      protocol: TCP
+      name: worker-metrics
+  selector:
+    {{- include "tsiot.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+{{- end }}
+
+---
+{{- if .Values.scheduler.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tsiot.fullname" . }}-scheduler
+  labels:
+    {{- include "tsiot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduler
+  annotations:
+    {{- with .Values.scheduler.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: {{ .Values.scheduler.service.type }}
+  ports:
+    - port: {{ .Values.scheduler.service.port }}
+      targetPort: scheduler-http
+      protocol: TCP
+      name: scheduler-http
+  selector:
+    {{- include "tsiot.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduler
+{{- end }}
+
+---
+{{- if .Values.grpc.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tsiot.fullname" . }}-grpc
+  labels:
+    {{- include "tsiot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grpc
+  annotations:
+    {{- with .Values.grpc.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: {{ .Values.grpc.service.type }}
+  {{- if .Values.grpc.service.clusterIP }}
+  clusterIP: {{ .Values.grpc.service.clusterIP }}
+  {{- end }}
+  {{- if .Values.grpc.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.grpc.service.loadBalancerIP }}
+  {{- end }}
+  {{- if .Values.grpc.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- with .Values.grpc.service.loadBalancerSourceRanges }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+  ports:
+    - port: {{ .Values.grpc.service.port }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+      {{- if and (or (eq .Values.grpc.service.type "NodePort") (eq .Values.grpc.service.type "LoadBalancer")) .Values.grpc.service.nodePort }}
+      nodePort: {{ .Values.grpc.service.nodePort }}
+      {{- end }}
+  selector:
+    {{- include "tsiot.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+{{- end }}
+
+---
+{{- if .Values.service.external.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tsiot.fullname" . }}-external
+  labels:
+    {{- include "tsiot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: external
+  annotations:
+    {{- with .Values.service.external.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: ExternalName
+  externalName: {{ .Values.service.external.externalName }}
+  ports:
+    - port: {{ .Values.service.external.port }}
+      targetPort: {{ .Values.service.external.targetPort }}
+      protocol: TCP
+      name: {{ .Values.service.external.name }}
+{{- end }}
+
+---
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tsiot.fullname" . }}-monitoring
+  labels:
+    {{- include "tsiot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+  annotations:
+    {{- with .Values.monitoring.serviceMonitor.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.metrics.service.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+    {{- if .Values.workers.enabled }}
+    - port: {{ .Values.workers.service.port }}
+      targetPort: worker-metrics
+      protocol: TCP
+      name: worker-metrics
+    {{- end }}
+    {{- if .Values.scheduler.enabled }}
+    - port: {{ .Values.scheduler.service.port }}
+      targetPort: scheduler-http
+      protocol: TCP
+      name: scheduler-metrics
+    {{- end }}
+  selector:
+    {{- include "tsiot.selectorLabels" . | nindent 4 }}
+{{- end }}

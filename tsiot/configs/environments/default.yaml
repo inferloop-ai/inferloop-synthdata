@@ -1,0 +1,98 @@
+# Default configuration for Time Series Synthetic Data MCP Server
+# This configuration serves as the base for all environments
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: "15s"
+  write_timeout: "15s"
+  idle_timeout: "60s"
+  enable_tls: false
+  cors:
+    enabled: true
+    allowed_origins: ["*"]
+    allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allowed_headers: ["*"]
+
+mcp:
+  enabled: true
+  transport: "stdio"
+  websocket_path: "/mcp"
+  max_message_size: 1048576
+
+storage:
+  backend: "influxdb"
+  connection_string: "http://localhost:8086"
+  database: "tsiot"
+  retention_policy: "30d"
+  batch_size: 1000
+  timeout: "30s"
+
+generators:
+  timegan:
+    enabled: true
+    model_path: "./models/timegan"
+    default_params:
+      epochs: 1000
+      batch_size: 32
+      hidden_dim: 24
+      num_layers: 3
+  
+  arima:
+    enabled: true
+    default_order: [2, 1, 2]
+    seasonal: true
+  
+  rnn:
+    enabled: true
+    model_type: "lstm"
+    default_params:
+      hidden_size: 64
+      num_layers: 2
+      dropout: 0.2
+  
+  statistical:
+    enabled: true
+    methods: ["gaussian", "markov"]
+  
+  ydata:
+    enabled: false
+    privacy_budget: 1.0
+    epsilon: 1.0
+    delta: 0.00001
+
+validation:
+  enabled: true
+  default_metrics: ["basic", "statistical"]
+  quality_threshold: 0.8
+  statistical_tests: ["ks", "anderson"]
+
+observability:
+  metrics:
+    enabled: true
+    port: 9090
+    path: "/metrics"
+  tracing:
+    enabled: false
+    provider: "jaeger"
+    service_name: "tsiot-server"
+
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
+  file:
+    enabled: false
+    path: "/var/log/tsiot/server.log"
+    max_size: "100MB"
+    max_age: "30d"
+    max_backups: 10
+
+security:
+  authentication:
+    enabled: false
+    method: "jwt"
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 100
+    burst: 200

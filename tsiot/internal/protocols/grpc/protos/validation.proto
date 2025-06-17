@@ -1,0 +1,896 @@
+syntax = "proto3";
+
+package tsiot.validation;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "timeseries.proto";
+
+option go_package = "github.com/inferloop/tsiot/internal/protocols/grpc/protos/validation";
+
+// ValidationService provides gRPC endpoints for data validation
+service ValidationService {
+  // Validate time series data
+  rpc ValidateTimeSeries(ValidateTimeSeriesRequest) returns (ValidateTimeSeriesResponse);
+  
+  // Validate batch of time series data
+  rpc ValidateTimeSeriesBatch(ValidateTimeSeriesBatchRequest) returns (ValidateTimeSeriesBatchResponse);
+  
+  // Stream validation (bidirectional streaming)
+  rpc StreamValidation(stream StreamValidationRequest) returns (stream StreamValidationResponse);
+  
+  // Run statistical tests
+  rpc RunStatisticalTests(StatisticalTestRequest) returns (StatisticalTestResponse);
+  
+  // Generate quality report
+  rpc GenerateQualityReport(QualityReportRequest) returns (QualityReportResponse);
+  
+  // Get validation rules
+  rpc GetValidationRules(GetValidationRulesRequest) returns (GetValidationRulesResponse);
+  
+  // Create custom validation rule
+  rpc CreateValidationRule(CreateValidationRuleRequest) returns (CreateValidationRuleResponse);
+  
+  // Validate synthetic data quality
+  rpc ValidateSyntheticQuality(ValidateSyntheticQualityRequest) returns (ValidateSyntheticQualityResponse);
+}
+
+// ValidateTimeSeriesRequest contains data to validate
+message ValidateTimeSeriesRequest {
+  tsiot.timeseries.TimeSeriesData data = 1;
+  ValidationConfig config = 2;
+  repeated string rule_names = 3;
+  bool include_suggestions = 4;
+}
+
+// ValidateTimeSeriesResponse contains validation results
+message ValidateTimeSeriesResponse {
+  bool valid = 1;
+  double quality_score = 2;
+  repeated ValidationResult results = 3;
+  repeated ValidationIssue issues = 4;
+  repeated ValidationSuggestion suggestions = 5;
+  ValidationMetrics metrics = 6;
+  google.protobuf.Timestamp validated_at = 7;
+}
+
+// ValidateTimeSeriesBatchRequest for batch validation
+message ValidateTimeSeriesBatchRequest {
+  tsiot.timeseries.TimeSeriesBatch batch = 1;
+  ValidationConfig config = 2;
+  repeated string rule_names = 3;
+  bool include_suggestions = 4;
+  BatchValidationOptions options = 5;
+}
+
+// ValidateTimeSeriesBatchResponse contains batch validation results
+message ValidateTimeSeriesBatchResponse {
+  bool valid = 1;
+  double overall_quality_score = 2;
+  repeated ValidationResult results = 3;
+  BatchValidationSummary summary = 4;
+  repeated ValidationIssue issues = 5;
+  ValidationMetrics metrics = 6;
+  google.protobuf.Timestamp validated_at = 7;
+}
+
+// StreamValidationRequest for streaming validation
+message StreamValidationRequest {
+  oneof request {
+    ValidationStreamConfig config = 1;
+    tsiot.timeseries.TimeSeriesData data = 2;
+    tsiot.timeseries.TimeSeriesBatch batch = 3;
+    ValidationStreamControl control = 4;
+  }
+}
+
+// StreamValidationResponse for streaming validation
+message StreamValidationResponse {
+  oneof response {
+    ValidationStreamStatus status = 1;
+    ValidationResult result = 2;
+    ValidationMetrics metrics = 3;
+    ValidationError error = 4;
+    QualityAlert alert = 5;
+  }
+}
+
+// StatisticalTestRequest for running statistical tests
+message StatisticalTestRequest {
+  repeated tsiot.timeseries.TimeSeriesData original_data = 1;
+  repeated tsiot.timeseries.TimeSeriesData synthetic_data = 2;
+  repeated StatisticalTest tests = 3;
+  TestConfiguration config = 4;
+}
+
+// StatisticalTestResponse contains test results
+message StatisticalTestResponse {
+  bool passed = 1;
+  repeated StatisticalTestResult results = 2;
+  StatisticalSummary summary = 3;
+  TestMetrics metrics = 4;
+  google.protobuf.Timestamp executed_at = 5;
+}
+
+// QualityReportRequest for generating quality reports
+message QualityReportRequest {
+  repeated tsiot.timeseries.TimeSeriesData original_data = 1;
+  repeated tsiot.timeseries.TimeSeriesData synthetic_data = 2;
+  QualityReportConfig config = 3;
+  ReportFormat format = 4;
+}
+
+// QualityReportResponse contains quality report
+message QualityReportResponse {
+  QualityReport report = 1;
+  bytes report_data = 2;  // Serialized report in requested format
+  string report_url = 3;
+  ReportMetadata metadata = 4;
+}
+
+// Core validation types
+
+// ValidationConfig configures validation behavior
+message ValidationConfig {
+  repeated ValidationRule rules = 1;
+  QualityThresholds thresholds = 2;
+  bool strict_mode = 3;
+  bool parallel_execution = 4;
+  int32 timeout_seconds = 5;
+  map<string, string> custom_config = 6;
+}
+
+// ValidationRule defines a validation rule
+message ValidationRule {
+  string name = 1;
+  string description = 2;
+  RuleType type = 3;
+  RuleCategory category = 4;
+  map<string, double> numeric_params = 5;
+  map<string, string> string_params = 6;
+  map<string, bool> boolean_params = 7;
+  RuleSeverity severity = 8;
+  bool enabled = 9;
+  repeated string depends_on = 10;
+}
+
+// RuleType defines types of validation rules
+enum RuleType {
+  RULE_TYPE_UNSPECIFIED = 0;
+  RULE_TYPE_RANGE = 1;
+  RULE_TYPE_STATISTICAL = 2;
+  RULE_TYPE_TEMPORAL = 3;
+  RULE_TYPE_PATTERN = 4;
+  RULE_TYPE_CORRELATION = 5;
+  RULE_TYPE_DISTRIBUTION = 6;
+  RULE_TYPE_ANOMALY = 7;
+  RULE_TYPE_CUSTOM = 8;
+}
+
+// RuleCategory groups rules by purpose
+enum RuleCategory {
+  RULE_CATEGORY_UNSPECIFIED = 0;
+  RULE_CATEGORY_DATA_QUALITY = 1;
+  RULE_CATEGORY_STATISTICAL_VALIDITY = 2;
+  RULE_CATEGORY_TEMPORAL_CONSISTENCY = 3;
+  RULE_CATEGORY_BUSINESS_LOGIC = 4;
+  RULE_CATEGORY_PRIVACY_COMPLIANCE = 5;
+  RULE_CATEGORY_PERFORMANCE = 6;
+}
+
+// RuleSeverity defines rule severity levels
+enum RuleSeverity {
+  RULE_SEVERITY_UNSPECIFIED = 0;
+  RULE_SEVERITY_INFO = 1;
+  RULE_SEVERITY_WARNING = 2;
+  RULE_SEVERITY_ERROR = 3;
+  RULE_SEVERITY_CRITICAL = 4;
+}
+
+// QualityThresholds defines quality thresholds
+message QualityThresholds {
+  double min_correlation = 1;
+  double max_kl_divergence = 2;
+  double max_mse = 3;
+  double min_r2_score = 4;
+  double max_drift = 5;
+  double min_completeness = 6;
+  double min_consistency = 7;
+  double min_accuracy = 8;
+  map<string, double> custom_thresholds = 9;
+}
+
+// ValidationResult contains validation result for a single rule
+message ValidationResult {
+  string rule_name = 1;
+  RuleType rule_type = 2;
+  RuleCategory rule_category = 3;
+  bool passed = 4;
+  double score = 5;
+  string message = 6;
+  map<string, double> metrics = 7;
+  repeated string details = 8;
+  RuleSeverity severity = 9;
+  google.protobuf.Timestamp executed_at = 10;
+  int64 execution_time_ms = 11;
+}
+
+// ValidationIssue represents a validation issue
+message ValidationIssue {
+  string id = 1;
+  string rule_name = 2;
+  RuleSeverity severity = 3;
+  string title = 4;
+  string description = 5;
+  string field = 6;
+  string value = 7;
+  string expected = 8;
+  repeated string affected_sensors = 9;
+  google.protobuf.Timestamp timestamp = 10;
+  map<string, string> context = 11;
+}
+
+// ValidationSuggestion provides suggestions for fixing issues
+message ValidationSuggestion {
+  string issue_id = 1;
+  string suggestion = 2;
+  SuggestionType type = 3;
+  double confidence = 4;
+  map<string, string> parameters = 5;
+  string rationale = 6;
+}
+
+// SuggestionType defines types of suggestions
+enum SuggestionType {
+  SUGGESTION_TYPE_UNSPECIFIED = 0;
+  SUGGESTION_TYPE_PARAMETER_ADJUSTMENT = 1;
+  SUGGESTION_TYPE_DATA_PREPROCESSING = 2;
+  SUGGESTION_TYPE_RULE_MODIFICATION = 3;
+  SUGGESTION_TYPE_MODEL_TUNING = 4;
+  SUGGESTION_TYPE_DATA_COLLECTION = 5;
+}
+
+// ValidationMetrics contains validation metrics
+message ValidationMetrics {
+  int64 total_rules = 1;
+  int64 passed_rules = 2;
+  int64 failed_rules = 3;
+  int64 skipped_rules = 4;
+  double overall_score = 5;
+  double execution_time_ms = 6;
+  map<string, int64> issues_by_severity = 7;
+  map<string, int64> issues_by_category = 8;
+  double coverage_percentage = 9;
+}
+
+// Batch validation types
+
+// BatchValidationOptions configures batch validation
+message BatchValidationOptions {
+  bool parallel_processing = 1;
+  int32 batch_size = 2;
+  bool fail_fast = 3;
+  bool generate_summary = 4;
+  bool include_individual_results = 5;
+  double sampling_ratio = 6;
+}
+
+// BatchValidationSummary summarizes batch validation results
+message BatchValidationSummary {
+  int64 total_items = 1;
+  int64 valid_items = 2;
+  int64 invalid_items = 3;
+  int64 skipped_items = 4;
+  double overall_quality_score = 5;
+  map<string, int64> issues_by_type = 6;
+  map<string, double> quality_by_sensor = 7;
+  QualityDistribution quality_distribution = 8;
+}
+
+// QualityDistribution shows distribution of quality scores
+message QualityDistribution {
+  repeated QualityBucket buckets = 1;
+  double mean = 2;
+  double median = 3;
+  double std_dev = 4;
+  double min = 5;
+  double max = 6;
+}
+
+// QualityBucket represents a quality score bucket
+message QualityBucket {
+  double min_score = 1;
+  double max_score = 2;
+  int64 count = 3;
+  double percentage = 4;
+}
+
+// Streaming validation types
+
+// ValidationStreamConfig configures streaming validation
+message ValidationStreamConfig {
+  string stream_id = 1;
+  ValidationConfig validation_config = 2;
+  StreamValidationMode mode = 3;
+  int32 buffer_size = 4;
+  int32 batch_size = 5;
+  int32 flush_interval_ms = 6;
+  bool enable_alerts = 7;
+  AlertConfig alert_config = 8;
+}
+
+// StreamValidationMode defines streaming validation modes
+enum StreamValidationMode {
+  STREAM_VALIDATION_MODE_UNSPECIFIED = 0;
+  STREAM_VALIDATION_MODE_REAL_TIME = 1;
+  STREAM_VALIDATION_MODE_BATCH = 2;
+  STREAM_VALIDATION_MODE_WINDOWED = 3;
+}
+
+// AlertConfig configures quality alerts
+message AlertConfig {
+  repeated AlertRule rules = 1;
+  repeated string notification_channels = 2;
+  bool enable_escalation = 3;
+  int32 cooldown_seconds = 4;
+}
+
+// AlertRule defines an alert rule
+message AlertRule {
+  string name = 1;
+  string condition = 2;  // e.g., "quality_score < 0.8"
+  AlertSeverity severity = 3;
+  string message_template = 4;
+  bool enabled = 5;
+}
+
+// AlertSeverity defines alert severity levels
+enum AlertSeverity {
+  ALERT_SEVERITY_UNSPECIFIED = 0;
+  ALERT_SEVERITY_LOW = 1;
+  ALERT_SEVERITY_MEDIUM = 2;
+  ALERT_SEVERITY_HIGH = 3;
+  ALERT_SEVERITY_CRITICAL = 4;
+}
+
+// ValidationStreamControl for controlling stream validation
+message ValidationStreamControl {
+  StreamControlType type = 1;
+  string stream_id = 2;
+  map<string, string> parameters = 3;
+}
+
+// StreamControlType defines stream control operations
+enum StreamControlType {
+  STREAM_CONTROL_TYPE_UNSPECIFIED = 0;
+  STREAM_CONTROL_TYPE_START = 1;
+  STREAM_CONTROL_TYPE_STOP = 2;
+  STREAM_CONTROL_TYPE_PAUSE = 3;
+  STREAM_CONTROL_TYPE_RESUME = 4;
+  STREAM_CONTROL_TYPE_CONFIGURE = 5;
+  STREAM_CONTROL_TYPE_RESET = 6;
+}
+
+// ValidationStreamStatus provides stream status
+message ValidationStreamStatus {
+  string stream_id = 1;
+  StreamState state = 2;
+  string message = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  StreamValidationMetrics metrics = 5;
+}
+
+// StreamState defines stream states
+enum StreamState {
+  STREAM_STATE_UNSPECIFIED = 0;
+  STREAM_STATE_STARTING = 1;
+  STREAM_STATE_RUNNING = 2;
+  STREAM_STATE_PAUSED = 3;
+  STREAM_STATE_STOPPING = 4;
+  STREAM_STATE_STOPPED = 5;
+  STREAM_STATE_ERROR = 6;
+}
+
+// StreamValidationMetrics contains streaming validation metrics
+message StreamValidationMetrics {
+  int64 messages_processed = 1;
+  int64 messages_validated = 2;
+  int64 messages_failed = 3;
+  double validation_rate = 4;
+  double average_quality_score = 5;
+  int64 alerts_triggered = 6;
+  google.protobuf.Timestamp last_processed = 7;
+}
+
+// ValidationError represents validation errors
+message ValidationError {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+  string component = 4;
+  map<string, string> details = 5;
+}
+
+// QualityAlert represents a quality alert
+message QualityAlert {
+  string alert_id = 1;
+  string rule_name = 2;
+  AlertSeverity severity = 3;
+  string title = 4;
+  string description = 5;
+  google.protobuf.Timestamp triggered_at = 6;
+  map<string, string> context = 7;
+  repeated string affected_sensors = 8;
+  double trigger_value = 9;
+  double threshold = 10;
+}
+
+// Statistical testing types
+
+// StatisticalTest defines a statistical test
+message StatisticalTest {
+  string name = 1;
+  TestType type = 2;
+  map<string, double> parameters = 3;
+  double alpha = 4;  // Significance level
+  string description = 5;
+  bool enabled = 6;
+}
+
+// TestType defines types of statistical tests
+enum TestType {
+  TEST_TYPE_UNSPECIFIED = 0;
+  TEST_TYPE_KS_TEST = 1;           // Kolmogorov-Smirnov
+  TEST_TYPE_AD_TEST = 2;           // Anderson-Darling
+  TEST_TYPE_LJUNG_BOX = 3;         // Ljung-Box
+  TEST_TYPE_ADF = 4;               // Augmented Dickey-Fuller
+  TEST_TYPE_JARQUE_BERA = 5;       // Jarque-Bera
+  TEST_TYPE_SHAPIRO_WILK = 6;      // Shapiro-Wilk
+  TEST_TYPE_CORRELATION = 7;        // Correlation analysis
+  TEST_TYPE_MANN_WHITNEY = 8;       // Mann-Whitney U
+  TEST_TYPE_WILCOXON = 9;          // Wilcoxon signed-rank
+  TEST_TYPE_CHI_SQUARE = 10;       // Chi-square
+  TEST_TYPE_T_TEST = 11;           // Student's t-test
+  TEST_TYPE_F_TEST = 12;           // F-test
+}
+
+// TestConfiguration configures test execution
+message TestConfiguration {
+  bool parallel_execution = 1;
+  int32 timeout_seconds = 2;
+  double confidence_level = 3;
+  bool bonferroni_correction = 4;
+  int32 bootstrap_samples = 5;
+  int32 random_seed = 6;
+}
+
+// StatisticalTestResult contains test result
+message StatisticalTestResult {
+  string test_name = 1;
+  TestType test_type = 2;
+  bool passed = 3;
+  double statistic = 4;
+  double p_value = 5;
+  double critical_value = 6;
+  double alpha = 7;
+  string interpretation = 8;
+  map<string, double> additional_metrics = 9;
+  TestMetadata metadata = 10;
+}
+
+// TestMetadata contains test metadata
+message TestMetadata {
+  int64 sample_size_original = 1;
+  int64 sample_size_synthetic = 2;
+  int64 execution_time_ms = 3;
+  string method_details = 4;
+  repeated string assumptions = 5;
+  repeated string warnings = 6;
+}
+
+// StatisticalSummary summarizes all test results
+message StatisticalSummary {
+  int64 total_tests = 1;
+  int64 passed_tests = 2;
+  int64 failed_tests = 3;
+  double overall_p_value = 4;
+  bool overall_passed = 5;
+  map<string, int64> results_by_type = 6;
+  repeated string failed_test_names = 7;
+  double bonferroni_alpha = 8;
+}
+
+// TestMetrics contains testing metrics
+message TestMetrics {
+  int64 total_execution_time_ms = 1;
+  double average_execution_time_ms = 2;
+  int64 total_comparisons = 3;
+  double statistical_power = 4;
+  double effect_size = 5;
+}
+
+// Quality report types
+
+// QualityReportConfig configures quality report generation
+message QualityReportConfig {
+  repeated QualityMetric metrics = 1;
+  repeated string visualizations = 2;
+  bool include_recommendations = 3;
+  bool include_statistical_tests = 4;
+  bool include_distribution_analysis = 5;
+  bool include_correlation_analysis = 6;
+  ReportDetailLevel detail_level = 7;
+}
+
+// QualityMetric defines a quality metric to calculate
+message QualityMetric {
+  string name = 1;
+  MetricType type = 2;
+  map<string, double> parameters = 3;
+  string description = 4;
+  bool enabled = 5;
+}
+
+// MetricType defines types of quality metrics
+enum MetricType {
+  METRIC_TYPE_UNSPECIFIED = 0;
+  METRIC_TYPE_CORRELATION = 1;
+  METRIC_TYPE_KL_DIVERGENCE = 2;
+  METRIC_TYPE_MSE = 3;
+  METRIC_TYPE_MAE = 4;
+  METRIC_TYPE_R2_SCORE = 5;
+  METRIC_TYPE_WASSERSTEIN = 6;
+  METRIC_TYPE_JENSEN_SHANNON = 7;
+  METRIC_TYPE_HISTOGRAM_INTERSECTION = 8;
+  METRIC_TYPE_DISTRIBUTION_SIMILARITY = 9;
+  METRIC_TYPE_TEMPORAL_CORRELATION = 10;
+}
+
+// ReportFormat defines report output formats
+enum ReportFormat {
+  REPORT_FORMAT_UNSPECIFIED = 0;
+  REPORT_FORMAT_JSON = 1;
+  REPORT_FORMAT_HTML = 2;
+  REPORT_FORMAT_PDF = 3;
+  REPORT_FORMAT_CSV = 4;
+  REPORT_FORMAT_PROTOBUF = 5;
+}
+
+// ReportDetailLevel defines report detail levels
+enum ReportDetailLevel {
+  REPORT_DETAIL_LEVEL_UNSPECIFIED = 0;
+  REPORT_DETAIL_LEVEL_SUMMARY = 1;
+  REPORT_DETAIL_LEVEL_DETAILED = 2;
+  REPORT_DETAIL_LEVEL_COMPREHENSIVE = 3;
+}
+
+// QualityReport contains comprehensive quality assessment
+message QualityReport {
+  string report_id = 1;
+  google.protobuf.Timestamp generated_at = 2;
+  QualityOverview overview = 3;
+  repeated QualityMetricResult metric_results = 4;
+  repeated StatisticalTestResult statistical_tests = 5;
+  DistributionAnalysis distribution_analysis = 6;
+  CorrelationAnalysis correlation_analysis = 7;
+  repeated QualityRecommendation recommendations = 8;
+  QualityReportMetadata metadata = 9;
+}
+
+// QualityOverview provides high-level quality summary
+message QualityOverview {
+  double overall_score = 1;
+  QualityGrade grade = 2;
+  string summary = 3;
+  int64 total_data_points_original = 4;
+  int64 total_data_points_synthetic = 5;
+  repeated string key_findings = 6;
+  repeated string concerns = 7;
+}
+
+// QualityGrade defines quality grades
+enum QualityGrade {
+  QUALITY_GRADE_UNSPECIFIED = 0;
+  QUALITY_GRADE_EXCELLENT = 1;
+  QUALITY_GRADE_GOOD = 2;
+  QUALITY_GRADE_FAIR = 3;
+  QUALITY_GRADE_POOR = 4;
+  QUALITY_GRADE_UNACCEPTABLE = 5;
+}
+
+// QualityMetricResult contains result for a quality metric
+message QualityMetricResult {
+  string metric_name = 1;
+  MetricType metric_type = 2;
+  double value = 3;
+  double threshold = 4;
+  bool passed = 5;
+  string interpretation = 6;
+  map<string, double> details = 7;
+}
+
+// DistributionAnalysis analyzes data distributions
+message DistributionAnalysis {
+  DistributionComparison overall_distribution = 1;
+  repeated SensorDistributionComparison sensor_distributions = 2;
+  DistributionSimilarity similarity_metrics = 3;
+}
+
+// DistributionComparison compares two distributions
+message DistributionComparison {
+  DistributionStats original_stats = 1;
+  DistributionStats synthetic_stats = 2;
+  double similarity_score = 3;
+  repeated string differences = 4;
+}
+
+// DistributionStats contains distribution statistics
+message DistributionStats {
+  double mean = 1;
+  double median = 2;
+  double std_dev = 3;
+  double min = 4;
+  double max = 5;
+  double skewness = 6;
+  double kurtosis = 7;
+  repeated double percentiles = 8;
+}
+
+// SensorDistributionComparison compares distributions per sensor
+message SensorDistributionComparison {
+  string sensor_id = 1;
+  string sensor_type = 2;
+  DistributionComparison comparison = 3;
+}
+
+// DistributionSimilarity contains distribution similarity metrics
+message DistributionSimilarity {
+  double kl_divergence = 1;
+  double js_divergence = 2;
+  double wasserstein_distance = 3;
+  double histogram_intersection = 4;
+  double earth_movers_distance = 5;
+}
+
+// CorrelationAnalysis analyzes correlations
+message CorrelationAnalysis {
+  CorrelationMatrix original_correlations = 1;
+  CorrelationMatrix synthetic_correlations = 2;
+  double correlation_similarity = 3;
+  repeated CorrelationDifference differences = 4;
+}
+
+// CorrelationMatrix represents a correlation matrix
+message CorrelationMatrix {
+  repeated string sensor_ids = 1;
+  repeated CorrelationRow rows = 2;
+}
+
+// CorrelationRow represents a row in correlation matrix
+message CorrelationRow {
+  string sensor_id = 1;
+  repeated double correlations = 2;
+}
+
+// CorrelationDifference represents correlation differences
+message CorrelationDifference {
+  string sensor1 = 1;
+  string sensor2 = 2;
+  double original_correlation = 3;
+  double synthetic_correlation = 4;
+  double difference = 5;
+  bool significant = 6;
+}
+
+// QualityRecommendation provides quality improvement recommendations
+message QualityRecommendation {
+  string id = 1;
+  RecommendationType type = 2;
+  string title = 3;
+  string description = 4;
+  double impact_score = 5;
+  double confidence = 6;
+  repeated string action_items = 7;
+  map<string, string> parameters = 8;
+}
+
+// RecommendationType defines types of recommendations
+enum RecommendationType {
+  RECOMMENDATION_TYPE_UNSPECIFIED = 0;
+  RECOMMENDATION_TYPE_MODEL_TUNING = 1;
+  RECOMMENDATION_TYPE_DATA_PREPROCESSING = 2;
+  RECOMMENDATION_TYPE_PARAMETER_ADJUSTMENT = 3;
+  RECOMMENDATION_TYPE_ARCHITECTURE_CHANGE = 4;
+  RECOMMENDATION_TYPE_TRAINING_IMPROVEMENT = 5;
+  RECOMMENDATION_TYPE_DATA_AUGMENTATION = 6;
+}
+
+// QualityReportMetadata contains report metadata
+message QualityReportMetadata {
+  string generator_version = 1;
+  string validation_version = 2;
+  int64 generation_time_ms = 3;
+  map<string, string> configuration = 4;
+  repeated string data_sources = 5;
+  string created_by = 6;
+}
+
+// ReportMetadata contains additional report metadata
+message ReportMetadata {
+  string format = 1;
+  int64 size_bytes = 2;
+  string checksum = 3;
+  map<string, string> headers = 4;
+}
+
+// Additional validation service methods
+
+// GetValidationRulesRequest for retrieving validation rules
+message GetValidationRulesRequest {
+  repeated RuleCategory categories = 1;
+  repeated RuleType types = 2;
+  bool include_disabled = 3;
+  string search_query = 4;
+}
+
+// GetValidationRulesResponse contains validation rules
+message GetValidationRulesResponse {
+  repeated ValidationRule rules = 1;
+  int64 total_count = 2;
+  map<string, int64> rules_by_category = 3;
+  map<string, int64> rules_by_type = 4;
+}
+
+// CreateValidationRuleRequest for creating custom rules
+message CreateValidationRuleRequest {
+  ValidationRule rule = 1;
+  bool validate_rule = 2;
+  bool replace_existing = 3;
+}
+
+// CreateValidationRuleResponse confirms rule creation
+message CreateValidationRuleResponse {
+  bool success = 1;
+  string rule_id = 2;
+  string message = 3;
+  repeated ValidationError validation_errors = 4;
+}
+
+// ValidateSyntheticQualityRequest for synthetic data quality validation
+message ValidateSyntheticQualityRequest {
+  repeated tsiot.timeseries.TimeSeriesData original_data = 1;
+  repeated tsiot.timeseries.TimeSeriesData synthetic_data = 2;
+  SyntheticQualityConfig config = 3;
+  bool include_detailed_analysis = 4;
+}
+
+// ValidateSyntheticQualityResponse contains synthetic quality results
+message ValidateSyntheticQualityResponse {
+  bool acceptable_quality = 1;
+  double overall_score = 2;
+  SyntheticQualityResults results = 3;
+  repeated QualityRecommendation recommendations = 4;
+  QualityReport detailed_report = 5;
+}
+
+// SyntheticQualityConfig configures synthetic quality validation
+message SyntheticQualityConfig {
+  repeated QualityMetric metrics = 1;
+  repeated StatisticalTest tests = 2;
+  QualityThresholds thresholds = 3;
+  bool check_privacy_preservation = 4;
+  bool check_utility_preservation = 5;
+  PrivacyAnalysisConfig privacy_config = 6;
+}
+
+// SyntheticQualityResults contains synthetic quality results
+message SyntheticQualityResults {
+  UtilityResults utility = 1;
+  PrivacyResults privacy = 2;
+  FidelityResults fidelity = 3;
+  DiversityResults diversity = 4;
+}
+
+// UtilityResults contains utility preservation results
+message UtilityResults {
+  double utility_score = 1;
+  bool utility_preserved = 2;
+  repeated UtilityMetric metrics = 3;
+}
+
+// UtilityMetric represents a utility metric
+message UtilityMetric {
+  string name = 1;
+  double value = 2;
+  double threshold = 3;
+  bool passed = 4;
+}
+
+// PrivacyResults contains privacy preservation results
+message PrivacyResults {
+  double privacy_score = 1;
+  bool privacy_preserved = 2;
+  repeated PrivacyMetric metrics = 3;
+  repeated PrivacyRisk risks = 4;
+}
+
+// PrivacyMetric represents a privacy metric
+message PrivacyMetric {
+  string name = 1;
+  double value = 2;
+  double threshold = 3;
+  bool passed = 4;
+  string description = 5;
+}
+
+// PrivacyRisk represents a privacy risk
+message PrivacyRisk {
+  string type = 1;
+  RiskLevel level = 2;
+  string description = 3;
+  double probability = 4;
+  repeated string mitigation_strategies = 5;
+}
+
+// RiskLevel defines privacy risk levels
+enum RiskLevel {
+  RISK_LEVEL_UNSPECIFIED = 0;
+  RISK_LEVEL_LOW = 1;
+  RISK_LEVEL_MEDIUM = 2;
+  RISK_LEVEL_HIGH = 3;
+  RISK_LEVEL_CRITICAL = 4;
+}
+
+// FidelityResults contains fidelity results
+message FidelityResults {
+  double fidelity_score = 1;
+  bool fidelity_acceptable = 2;
+  StatisticalFidelity statistical_fidelity = 3;
+  TemporalFidelity temporal_fidelity = 4;
+}
+
+// StatisticalFidelity contains statistical fidelity metrics
+message StatisticalFidelity {
+  double distribution_similarity = 1;
+  double correlation_preservation = 2;
+  double moment_similarity = 3;
+}
+
+// TemporalFidelity contains temporal fidelity metrics
+message TemporalFidelity {
+  double autocorrelation_similarity = 1;
+  double trend_preservation = 2;
+  double seasonality_preservation = 3;
+}
+
+// DiversityResults contains diversity results
+message DiversityResults {
+  double diversity_score = 1;
+  bool sufficient_diversity = 2;
+  IntraClassDiversity intra_class = 3;
+  InterClassDiversity inter_class = 4;
+}
+
+// IntraClassDiversity measures diversity within classes
+message IntraClassDiversity {
+  double average_distance = 1;
+  double minimum_distance = 2;
+  double coverage_ratio = 3;
+}
+
+// InterClassDiversity measures diversity between classes
+message InterClassDiversity {
+  double separation_score = 1;
+  double distinctiveness = 2;
+  double class_balance = 3;
+}
+
+// PrivacyAnalysisConfig configures privacy analysis
+message PrivacyAnalysisConfig {
+  repeated string privacy_metrics = 1;
+  double anonymity_threshold = 2;
+  bool check_membership_inference = 3;
+  bool check_attribute_inference = 4;
+  bool check_model_inversion = 5;
+  int32 attack_iterations = 6;
+}

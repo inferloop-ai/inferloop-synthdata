@@ -1,0 +1,619 @@
+syntax = "proto3";
+
+package tsiot.generation;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "timeseries.proto";
+
+option go_package = "github.com/inferloop/tsiot/internal/protocols/grpc/protos/generation";
+
+// GenerationService provides gRPC endpoints for synthetic data generation
+service GenerationService {
+  // Generate synthetic time series data
+  rpc GenerateTimeSeries(GenerateTimeSeriesRequest) returns (GenerateTimeSeriesResponse);
+  
+  // Generate data with streaming (server streaming)
+  rpc GenerateTimeSeriesStream(GenerateTimeSeriesStreamRequest) returns (stream GenerationStreamResponse);
+  
+  // Train a generation model
+  rpc TrainModel(TrainModelRequest) returns (TrainModelResponse);
+  
+  // Train model with streaming updates (server streaming)
+  rpc TrainModelStream(TrainModelStreamRequest) returns (stream TrainingStreamResponse);
+  
+  // Get model information
+  rpc GetModelInfo(GetModelInfoRequest) returns (GetModelInfoResponse);
+  
+  // List available models
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+  
+  // Delete a model
+  rpc DeleteModel(DeleteModelRequest) returns (DeleteModelResponse);
+  
+  // Generate batch data
+  rpc GenerateBatch(GenerateBatchRequest) returns (GenerateBatchResponse);
+  
+  // Validate generation parameters
+  rpc ValidateParameters(ValidateParametersRequest) returns (ValidateParametersResponse);
+}
+
+// GenerateTimeSeriesRequest contains parameters for time series generation
+message GenerateTimeSeriesRequest {
+  GenerationConfig config = 1;
+  GenerationParameters parameters = 2;
+  OutputConfig output = 3;
+  ValidationConfig validation = 4;
+}
+
+// GenerateTimeSeriesResponse contains generated time series data
+message GenerateTimeSeriesResponse {
+  bool success = 1;
+  string job_id = 2;
+  repeated tsiot.timeseries.TimeSeriesData data = 3;
+  GenerationMetrics metrics = 4;
+  string error_message = 5;
+  google.protobuf.Timestamp generated_at = 6;
+  QualityReport quality_report = 7;
+}
+
+// Core configuration types
+message GenerationConfig {
+  string generator_type = 1;  // "statistical", "lstm", "gan", "timegan", "arima"
+  string model_id = 2;
+  int32 sequence_length = 3;
+  int32 num_samples = 4;
+  google.protobuf.Timestamp start_time = 5;
+  google.protobuf.Timestamp end_time = 6;
+  double sampling_rate = 7;
+  string frequency = 8;  // "1s", "1m", "1h", etc.
+  int32 random_seed = 9;
+  bool deterministic = 10;
+}
+
+message GenerationParameters {
+  map<string, double> numeric_params = 1;
+  map<string, string> string_params = 2;
+  map<string, bool> boolean_params = 3;
+  map<string, int32> integer_params = 4;
+}
+
+message OutputConfig {
+  OutputFormat format = 1;
+  string destination = 2;
+  bool compression = 3;
+  map<string, string> metadata = 4;
+}
+
+enum OutputFormat {
+  OUTPUT_FORMAT_UNSPECIFIED = 0;
+  OUTPUT_FORMAT_JSON = 1;
+  OUTPUT_FORMAT_CSV = 2;
+  OUTPUT_FORMAT_PARQUET = 3;
+  OUTPUT_FORMAT_PROTOBUF = 4;
+  OUTPUT_FORMAT_STREAM = 5;
+}
+
+message ValidationConfig {
+  bool enabled = 1;
+  repeated ValidationRule rules = 2;
+  QualityThresholds thresholds = 3;
+  bool strict_mode = 4;
+}
+
+message ValidationRule {
+  string name = 1;
+  string description = 2;
+  RuleType type = 3;
+  map<string, double> parameters = 4;
+  bool required = 5;
+}
+
+enum RuleType {
+  RULE_TYPE_UNSPECIFIED = 0;
+  RULE_TYPE_RANGE = 1;
+  RULE_TYPE_STATISTICAL = 2;
+  RULE_TYPE_TEMPORAL = 3;
+  RULE_TYPE_CUSTOM = 4;
+}
+
+message QualityThresholds {
+  double min_correlation = 1;
+  double min_kl_divergence = 2;
+  double max_mse = 3;
+  double min_r2_score = 4;
+  double max_drift = 5;
+}
+
+// Streaming types
+message GenerateTimeSeriesStreamRequest {
+  GenerationConfig config = 1;
+  GenerationParameters parameters = 2;
+  StreamingConfig streaming = 3;
+  ValidationConfig validation = 4;
+}
+
+message GenerationStreamResponse {
+  oneof response {
+    GenerationStatus status = 1;
+    tsiot.timeseries.TimeSeriesData data = 2;
+    tsiot.timeseries.TimeSeriesBatch batch = 3;
+    GenerationMetrics metrics = 4;
+    GenerationError error = 5;
+    QualityReport quality_report = 6;
+  }
+}
+
+message StreamingConfig {
+  int32 batch_size = 1;
+  int32 buffer_size = 2;
+  int32 flush_interval_ms = 3;
+  bool enable_backpressure = 4;
+  int32 max_queue_size = 5;
+}
+
+// Training types
+message TrainModelRequest {
+  string model_name = 1;
+  ModelConfig model_config = 2;
+  TrainingData training_data = 3;
+  TrainingParameters parameters = 4;
+  ValidationConfig validation = 5;
+}
+
+message TrainModelResponse {
+  bool success = 1;
+  string model_id = 2;
+  string job_id = 3;
+  TrainingMetrics metrics = 4;
+  string error_message = 5;
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp completed_at = 7;
+  ModelInfo model_info = 8;
+}
+
+message ModelConfig {
+  string model_type = 1;
+  string architecture = 2;
+  ModelHyperparameters hyperparameters = 3;
+  FeatureConfig features = 4;
+  PrivacyConfig privacy = 5;
+}
+
+message ModelHyperparameters {
+  double learning_rate = 1;
+  int32 epochs = 2;
+  int32 batch_size = 3;
+  int32 hidden_units = 4;
+  int32 num_layers = 5;
+  double dropout_rate = 6;
+  string optimizer = 7;
+  string loss_function = 8;
+  map<string, double> custom_params = 9;
+}
+
+message FeatureConfig {
+  repeated string features = 1;
+  bool auto_features = 2;
+  bool normalize = 3;
+  bool standardize = 4;
+}
+
+message PrivacyConfig {
+  bool enabled = 1;
+  string mechanism = 2;  // "differential_privacy", "k_anonymity", "l_diversity"
+  double epsilon = 3;
+  double delta = 4;
+  int32 k_value = 5;
+  int32 l_value = 6;
+  bool add_noise = 7;
+}
+
+message TrainingData {
+  DataSource source = 1;
+  DataPreprocessing preprocessing = 2;
+  DataSplit split = 3;
+}
+
+message DataSource {
+  SourceType type = 1;
+  string location = 2;
+  DataFormat format = 3;
+  map<string, string> connection_params = 4;
+}
+
+enum SourceType {
+  SOURCE_TYPE_UNSPECIFIED = 0;
+  SOURCE_TYPE_FILE = 1;
+  SOURCE_TYPE_DATABASE = 2;
+  SOURCE_TYPE_STREAM = 3;
+  SOURCE_TYPE_API = 4;
+}
+
+enum DataFormat {
+  DATA_FORMAT_UNSPECIFIED = 0;
+  DATA_FORMAT_CSV = 1;
+  DATA_FORMAT_JSON = 2;
+  DATA_FORMAT_PARQUET = 3;
+  DATA_FORMAT_TIMESERIES = 4;
+}
+
+message DataPreprocessing {
+  bool remove_outliers = 1;
+  bool fill_missing = 2;
+  MissingValueStrategy missing_strategy = 3;
+  bool smooth_data = 4;
+}
+
+enum MissingValueStrategy {
+  MISSING_VALUE_STRATEGY_UNSPECIFIED = 0;
+  MISSING_VALUE_STRATEGY_DROP = 1;
+  MISSING_VALUE_STRATEGY_FORWARD_FILL = 2;
+  MISSING_VALUE_STRATEGY_BACKWARD_FILL = 3;
+  MISSING_VALUE_STRATEGY_INTERPOLATE = 4;
+  MISSING_VALUE_STRATEGY_MEAN = 5;
+  MISSING_VALUE_STRATEGY_MEDIAN = 6;
+}
+
+message DataSplit {
+  double train_ratio = 1;
+  double validation_ratio = 2;
+  double test_ratio = 3;
+  SplitStrategy strategy = 4;
+  int32 random_seed = 5;
+}
+
+enum SplitStrategy {
+  SPLIT_STRATEGY_UNSPECIFIED = 0;
+  SPLIT_STRATEGY_RANDOM = 1;
+  SPLIT_STRATEGY_TEMPORAL = 2;
+  SPLIT_STRATEGY_STRATIFIED = 3;
+}
+
+message TrainingParameters {
+  int32 max_epochs = 1;
+  double learning_rate = 2;
+  int32 batch_size = 3;
+  EarlyStoppingConfig early_stopping = 4;
+  CheckpointConfig checkpointing = 5;
+}
+
+message EarlyStoppingConfig {
+  bool enabled = 1;
+  string metric = 2;
+  int32 patience = 3;
+  double min_delta = 4;
+  string mode = 5;  // "min", "max"
+}
+
+message CheckpointConfig {
+  bool enabled = 1;
+  int32 save_frequency = 2;
+  string save_path = 3;
+  bool save_best_only = 4;
+  string monitor_metric = 5;
+}
+
+// Metrics and status types
+message GenerationMetrics {
+  int64 samples_generated = 1;
+  int64 generation_time_ms = 2;
+  double samples_per_second = 3;
+  double memory_usage_mb = 4;
+  double cpu_usage_percent = 5;
+  QualityMetrics quality = 6;
+}
+
+message QualityMetrics {
+  double correlation = 1;
+  double kl_divergence = 2;
+  double mse = 3;
+  double mae = 4;
+  double r2_score = 5;
+  map<string, double> custom_metrics = 6;
+}
+
+message GenerationStatus {
+  string job_id = 1;
+  GenerationState state = 2;
+  double progress = 3;
+  string message = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  GenerationMetrics metrics = 6;
+}
+
+enum GenerationState {
+  GENERATION_STATE_UNSPECIFIED = 0;
+  GENERATION_STATE_PENDING = 1;
+  GENERATION_STATE_RUNNING = 2;
+  GENERATION_STATE_COMPLETED = 3;
+  GENERATION_STATE_FAILED = 4;
+  GENERATION_STATE_CANCELLED = 5;
+}
+
+message GenerationError {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+  map<string, string> details = 4;
+}
+
+message QualityReport {
+  double overall_score = 1;
+  repeated QualityCheck checks = 2;
+  map<string, double> metrics = 3;
+  repeated QualityIssue issues = 4;
+  google.protobuf.Timestamp generated_at = 5;
+}
+
+message QualityCheck {
+  string name = 1;
+  bool passed = 2;
+  double score = 3;
+  string description = 4;
+  map<string, string> details = 5;
+}
+
+message QualityIssue {
+  string type = 1;
+  string severity = 2;
+  string description = 3;
+  string suggestion = 4;
+}
+
+message TrainingMetrics {
+  int32 epoch = 1;
+  double loss = 2;
+  double validation_loss = 3;
+  map<string, double> metrics = 4;
+  int64 training_time_ms = 5;
+  double learning_rate = 6;
+}
+
+// Additional required messages for completeness
+message TrainModelStreamRequest {
+  string model_name = 1;
+  ModelConfig model_config = 2;
+  TrainingData training_data = 3;
+  TrainingParameters parameters = 4;
+  StreamingConfig streaming = 5;
+}
+
+message TrainingStreamResponse {
+  oneof response {
+    TrainingStatus status = 1;
+    TrainingMetrics metrics = 2;
+    TrainingError error = 3;
+    ModelCheckpoint checkpoint = 4;
+    TrainingLog log = 5;
+  }
+}
+
+message TrainingStatus {
+  string job_id = 1;
+  TrainingState state = 2;
+  double progress = 3;
+  string message = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  TrainingMetrics current_metrics = 6;
+}
+
+enum TrainingState {
+  TRAINING_STATE_UNSPECIFIED = 0;
+  TRAINING_STATE_PENDING = 1;
+  TRAINING_STATE_RUNNING = 2;
+  TRAINING_STATE_COMPLETED = 3;
+  TRAINING_STATE_FAILED = 4;
+  TRAINING_STATE_CANCELLED = 5;
+  TRAINING_STATE_PAUSED = 6;
+}
+
+message TrainingError {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+  string phase = 4;  // "preprocessing", "training", "validation"
+  map<string, string> details = 5;
+}
+
+message ModelCheckpoint {
+  string checkpoint_id = 1;
+  int32 epoch = 2;
+  double score = 3;
+  string metric = 4;
+  google.protobuf.Timestamp created_at = 5;
+  string file_path = 6;
+  int64 file_size = 7;
+}
+
+message TrainingLog {
+  LogLevel level = 1;
+  string message = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  string component = 4;
+  map<string, string> context = 5;
+}
+
+enum LogLevel {
+  LOG_LEVEL_UNSPECIFIED = 0;
+  LOG_LEVEL_DEBUG = 1;
+  LOG_LEVEL_INFO = 2;
+  LOG_LEVEL_WARNING = 3;
+  LOG_LEVEL_ERROR = 4;
+}
+
+message GetModelInfoRequest {
+  string model_id = 1;
+  bool include_parameters = 2;
+  bool include_metrics = 3;
+  bool include_history = 4;
+}
+
+message GetModelInfoResponse {
+  ModelInfo model_info = 1;
+  ModelParameters parameters = 2;
+  TrainingMetrics metrics = 3;
+  repeated TrainingHistory history = 4;
+}
+
+message ModelInfo {
+  string model_id = 1;
+  string name = 2;
+  string description = 3;
+  string model_type = 4;
+  string version = 5;
+  ModelStatus status = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  string created_by = 9;
+  map<string, string> tags = 10;
+  ModelMetadata metadata = 11;
+}
+
+enum ModelStatus {
+  MODEL_STATUS_UNSPECIFIED = 0;
+  MODEL_STATUS_TRAINING = 1;
+  MODEL_STATUS_TRAINED = 2;
+  MODEL_STATUS_DEPLOYED = 3;
+  MODEL_STATUS_ARCHIVED = 4;
+  MODEL_STATUS_ERROR = 5;
+}
+
+message ModelMetadata {
+  int64 size_bytes = 1;
+  string format = 2;
+  string framework = 3;
+  string framework_version = 4;
+  int32 parameters_count = 5;
+  map<string, string> custom_metadata = 6;
+}
+
+message ModelParameters {
+  ModelHyperparameters hyperparameters = 1;
+  FeatureConfig features = 2;
+  map<string, double> learned_params = 3;
+}
+
+message TrainingHistory {
+  string training_id = 1;
+  google.protobuf.Timestamp started_at = 2;
+  google.protobuf.Timestamp completed_at = 3;
+  TrainingState final_state = 4;
+  TrainingMetrics final_metrics = 5;
+  TrainingParameters parameters = 6;
+}
+
+message ListModelsRequest {
+  ModelFilter filter = 1;
+  PaginationOptions pagination = 2;
+  bool include_metadata = 3;
+}
+
+message ListModelsResponse {
+  repeated ModelInfo models = 1;
+  PaginationInfo pagination = 2;
+  int64 total_count = 3;
+}
+
+message ModelFilter {
+  repeated string model_types = 1;
+  repeated ModelStatus statuses = 2;
+  repeated string tags = 3;
+  google.protobuf.Timestamp created_after = 4;
+  google.protobuf.Timestamp created_before = 5;
+  string created_by = 6;
+}
+
+message PaginationOptions {
+  int32 page_size = 1;
+  string page_token = 2;
+  string sort_field = 3;
+  SortOrder sort_order = 4;
+}
+
+enum SortOrder {
+  SORT_ORDER_UNSPECIFIED = 0;
+  SORT_ORDER_ASC = 1;
+  SORT_ORDER_DESC = 2;
+}
+
+message PaginationInfo {
+  string next_page_token = 1;
+  int32 total_pages = 2;
+  bool has_more = 3;
+}
+
+message DeleteModelRequest {
+  string model_id = 1;
+  bool force = 2;
+  bool backup = 3;
+}
+
+message DeleteModelResponse {
+  bool success = 1;
+  string message = 2;
+  string backup_location = 3;
+}
+
+message GenerateBatchRequest {
+  repeated GenerateTimeSeriesRequest requests = 1;
+  BatchConfig batch_config = 2;
+}
+
+message GenerateBatchResponse {
+  bool success = 1;
+  string batch_id = 2;
+  repeated GenerateTimeSeriesResponse results = 3;
+  BatchMetrics metrics = 4;
+  repeated string failed_jobs = 5;
+}
+
+message BatchConfig {
+  int32 batch_size = 1;
+  int32 max_parallel = 2;
+  int32 timeout_seconds = 3;
+  bool fail_fast = 4;
+}
+
+message BatchMetrics {
+  int32 total_jobs = 1;
+  int32 completed_jobs = 2;
+  int32 failed_jobs = 3;
+  int64 total_time_ms = 4;
+  double average_time_ms = 5;
+  double throughput = 6;
+}
+
+message ValidateParametersRequest {
+  GenerationParameters parameters = 1;
+  ModelConfig model_config = 2;
+  ValidationConfig validation = 3;
+}
+
+message ValidateParametersResponse {
+  bool valid = 1;
+  repeated ValidationError errors = 2;
+  repeated ValidationWarning warnings = 3;
+  ParameterSuggestions suggestions = 4;
+}
+
+message ValidationError {
+  string field = 1;
+  string code = 2;
+  string message = 3;
+  string value = 4;
+}
+
+message ValidationWarning {
+  string field = 1;
+  string code = 2;
+  string message = 3;
+  string suggestion = 4;
+}
+
+message ParameterSuggestions {
+  map<string, double> suggested_numeric = 1;
+  map<string, string> suggested_string = 2;
+  map<string, bool> suggested_boolean = 3;
+  repeated string recommendations = 4;
+}

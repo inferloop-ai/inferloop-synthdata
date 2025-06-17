@@ -1,0 +1,162 @@
+# Code Generator Configuration
+# Configuration for automatic code generation tools
+
+generators:
+  # Protocol Buffer generation
+  protobuf:
+    enabled: true
+    source_dir: "../../internal/protocols/grpc/protos"
+    output_dir: "../../internal/protocols/grpc/generated"
+    include_dirs:
+      - "../../third_party/protos"
+    plugins:
+      - name: "go"
+        output: "../../internal/protocols/grpc/generated"
+        options:
+          - "paths=source_relative"
+      - name: "go-grpc"
+        output: "../../internal/protocols/grpc/generated"
+        options:
+          - "paths=source_relative"
+          - "require_unimplemented_servers=false"
+      - name: "grpc-gateway"
+        output: "../../internal/protocols/grpc/generated"
+        options:
+          - "paths=source_relative"
+          - "generate_unbound_methods=true"
+
+  # OpenAPI/Swagger generation
+  openapi:
+    enabled: true
+    spec_file: "../../docs/api/openapi.yaml"
+    output_dir: "../../internal/api/generated"
+    package_name: "openapi"
+    generate:
+      - "server"
+      - "client"
+      - "models"
+      - "spec"
+
+  # Mock generation for testing
+  mocks:
+    enabled: true
+    source_dirs:
+      - "../../internal/storage"
+      - "../../internal/generators"
+      - "../../internal/validation"
+    output_dir: "../../internal/mocks"
+    interfaces:
+      - name: "StorageBackend"
+        package: "storage"
+      - name: "Generator"
+        package: "generators"
+      - name: "Validator"
+        package: "validation"
+      - name: "TimeSeriesStore"
+        package: "storage"
+
+  # SQL migration generation
+  sqlc:
+    enabled: true
+    version: "1.18.0"
+    config_file: "./sqlc.yaml"
+    queries_dir: "../../internal/storage/postgres/queries"
+    schema_dir: "../../internal/storage/postgres/schema"
+    output_dir: "../../internal/storage/postgres/generated"
+
+  # API client SDKs
+  sdk:
+    enabled: true
+    openapi_spec: "../../docs/api/openapi.yaml"
+    output_base: "../../sdk"
+    languages:
+      go:
+        enabled: true
+        output_dir: "../../sdk/go"
+        package_name: "github.com/inferloop/tsiot-sdk-go"
+        version: "v1.0.0"
+      python:
+        enabled: true
+        output_dir: "../../sdk/python"
+        package_name: "tsiot-sdk"
+        version: "1.0.0"
+      javascript:
+        enabled: true
+        output_dir: "../../sdk/javascript"
+        package_name: "@inferloop/tsiot-sdk"
+        version: "1.0.0"
+        typescript: true
+
+  # Documentation generation
+  docs:
+    enabled: true
+    source_dirs:
+      - "../../cmd"
+      - "../../internal"
+      - "../../pkg"
+    output_dir: "../../docs/generated"
+    formats:
+      - "markdown"
+      - "html"
+    include_private: false
+
+# Template configurations
+templates:
+  custom_dir: "./templates"
+  overrides:
+    - template: "mock.go.tmpl"
+      output_suffix: "_mock.go"
+    - template: "client.go.tmpl"
+      output_suffix: "_client.go"
+
+# Code formatting and validation
+formatting:
+  go:
+    enabled: true
+    gofmt: true
+    goimports: true
+    golangci_lint: true
+  proto:
+    enabled: true
+    clang_format: true
+
+# Generation hooks
+hooks:
+  pre_generate:
+    - name: "Clean old generated files"
+      command: "find ../../internal -name '*_generated.go' -delete"
+    - name: "Ensure directories exist"
+      command: "mkdir -p ../../internal/protocols/grpc/generated ../../internal/api/generated ../../internal/mocks"
+  
+  post_generate:
+    - name: "Format generated code"
+      command: "go fmt ./..."
+    - name: "Run go mod tidy"
+      command: "cd ../.. && go mod tidy"
+    - name: "Generate documentation"
+      command: "go doc -all > ../../docs/generated/api.txt"
+
+# Watch mode configuration
+watch:
+  enabled: true
+  paths:
+    - "../../internal/protocols/grpc/protos/**/*.proto"
+    - "../../docs/api/openapi.yaml"
+    - "./templates/**/*.tmpl"
+  exclude:
+    - "**/*_generated.go"
+    - "**/*_mock.go"
+  debounce: 500 # milliseconds
+
+# Logging configuration
+logging:
+  level: "info"
+  format: "json"
+  output: "./generator.log"
+
+# Performance tuning
+performance:
+  parallel_generation: true
+  max_workers: 4
+  cache_enabled: true
+  cache_dir: "./.cache"

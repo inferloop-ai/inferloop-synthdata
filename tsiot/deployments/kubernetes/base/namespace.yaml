@@ -1,0 +1,176 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tsiot
+  labels:
+    name: tsiot
+    app.kubernetes.io/name: tsiot
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: namespace
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+    environment: production
+  annotations:
+    kubernetes.io/managed-by: "tsiot-platform"
+    description: "TSIoT Time Series Synthetic Data Platform"
+    contact: "tsiot-team@example.com"
+    cost-center: "engineering"
+    project: "tsiot"
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tsiot-system
+  labels:
+    name: tsiot-system
+    app.kubernetes.io/name: tsiot-system
+    app.kubernetes.io/instance: tsiot-system
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: system-namespace
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+    environment: production
+  annotations:
+    kubernetes.io/managed-by: "tsiot-platform"
+    description: "TSIoT System Components and Operators"
+    contact: "tsiot-team@example.com"
+    cost-center: "engineering"
+    project: "tsiot"
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tsiot-monitoring
+  labels:
+    name: tsiot-monitoring
+    app.kubernetes.io/name: tsiot-monitoring
+    app.kubernetes.io/instance: tsiot-monitoring
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: monitoring-namespace
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+    environment: production
+  annotations:
+    kubernetes.io/managed-by: "tsiot-platform"
+    description: "TSIoT Monitoring and Observability Stack"
+    contact: "tsiot-team@example.com"
+    cost-center: "engineering"
+    project: "tsiot"
+
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: tsiot-compute-quota
+  namespace: tsiot
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: 40Gi
+    limits.cpu: "40"
+    limits.memory: 80Gi
+    persistentvolumeclaims: "10"
+    requests.storage: 1Ti
+    pods: "50"
+    services: "20"
+    configmaps: "50"
+    secrets: "50"
+
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: tsiot-system-compute-quota
+  namespace: tsiot-system
+spec:
+  hard:
+    requests.cpu: "5"
+    requests.memory: 10Gi
+    limits.cpu: "10"
+    limits.memory: 20Gi
+    persistentvolumeclaims: "5"
+    requests.storage: 100Gi
+    pods: "20"
+    services: "10"
+    configmaps: "20"
+    secrets: "20"
+
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: tsiot-monitoring-compute-quota
+  namespace: tsiot-monitoring
+spec:
+  hard:
+    requests.cpu: "10"
+    requests.memory: 20Gi
+    limits.cpu: "20"
+    limits.memory: 40Gi
+    persistentvolumeclaims: "10"
+    requests.storage: 500Gi
+    pods: "30"
+    services: "15"
+    configmaps: "30"
+    secrets: "30"
+
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: tsiot-default-limits
+  namespace: tsiot
+spec:
+  limits:
+  - default:
+      cpu: "1"
+      memory: "2Gi"
+      ephemeral-storage: "5Gi"
+    defaultRequest:
+      cpu: "100m"
+      memory: "256Mi"
+      ephemeral-storage: "1Gi"
+    type: Container
+  - default:
+      storage: "10Gi"
+    type: PersistentVolumeClaim
+
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: tsiot-system-default-limits
+  namespace: tsiot-system
+spec:
+  limits:
+  - default:
+      cpu: "500m"
+      memory: "1Gi"
+      ephemeral-storage: "2Gi"
+    defaultRequest:
+      cpu: "50m"
+      memory: "128Mi"
+      ephemeral-storage: "500Mi"
+    type: Container
+
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: tsiot-monitoring-default-limits
+  namespace: tsiot-monitoring
+spec:
+  limits:
+  - default:
+      cpu: "2"
+      memory: "4Gi"
+      ephemeral-storage: "10Gi"
+    defaultRequest:
+      cpu: "100m"
+      memory: "256Mi"
+      ephemeral-storage: "1Gi"
+    type: Container

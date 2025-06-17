@@ -1,0 +1,125 @@
+# Development environment configuration
+# Extends default.yaml with development-specific settings
+
+server:
+  host: "localhost"
+  port: 8080
+  enable_tls: false
+  cors:
+    enabled: true
+    allowed_origins: 
+      - "http://localhost:3000"
+      - "http://localhost:8080"
+      - "http://127.0.0.1:3000"
+      - "http://127.0.0.1:8080"
+
+mcp:
+  enabled: true
+  transport: "stdio"
+  websocket_path: "/mcp"
+
+storage:
+  backend: "influxdb"
+  connection_string: "http://localhost:8086"
+  database: "tsiot_dev"
+  retention_policy: "7d"
+  batch_size: 100
+  timeout: "10s"
+
+generators:
+  timegan:
+    enabled: true
+    model_path: "./dev/models/timegan"
+    default_params:
+      epochs: 100  # Reduced for faster development
+      batch_size: 16
+      hidden_dim: 12
+      num_layers: 2
+  
+  arima:
+    enabled: true
+    default_order: [1, 1, 1]  # Simpler model for dev
+    seasonal: false
+  
+  rnn:
+    enabled: true
+    model_type: "lstm"
+    default_params:
+      hidden_size: 32  # Smaller for faster training
+      num_layers: 1
+      dropout: 0.1
+  
+  statistical:
+    enabled: true
+    methods: ["gaussian"]  # Limited methods for simplicity
+  
+  ydata:
+    enabled: true  # Enable for testing
+    privacy_budget: 2.0  # More permissive for development
+    epsilon: 2.0
+    delta: 0.0001
+
+validation:
+  enabled: true
+  default_metrics: ["basic"]  # Reduced metrics for speed
+  quality_threshold: 0.7  # Lower threshold for development
+  statistical_tests: ["ks"]
+
+observability:
+  metrics:
+    enabled: true
+    port: 9090
+    path: "/metrics"
+  tracing:
+    enabled: true  # Enable for debugging
+    provider: "jaeger"
+    endpoint: "http://localhost:14268/api/traces"
+    service_name: "tsiot-server-dev"
+
+logging:
+  level: "debug"  # Verbose logging for development
+  format: "text"  # Human-readable format
+  output: "stdout"
+  file:
+    enabled: true
+    path: "./logs/dev-server.log"
+    max_size: "50MB"
+    max_age: "7d"
+    max_backups: 3
+
+security:
+  authentication:
+    enabled: false  # Disabled for easy development
+  rate_limiting:
+    enabled: false  # Disabled for development
+
+# Development-specific settings
+development:
+  hot_reload: true
+  debug_mode: true
+  mock_external_services: true
+  sample_data_path: "./dev/sample_data"
+  
+# Database seeding for development
+seed_data:
+  enabled: true
+  datasets:
+    - name: "temperature_sensors"
+      file: "./dev/seed/temperature_data.csv"
+      sensor_type: "temperature"
+    - name: "humidity_sensors"
+      file: "./dev/seed/humidity_data.csv"
+      sensor_type: "humidity"
+
+# Development API keys and secrets (non-production)
+api_keys:
+  development_key: "dev-key-12345"
+  test_key: "test-key-67890"
+
+# Mock services configuration
+mock_services:
+  influxdb:
+    enabled: false  # Use real InfluxDB in development
+  external_apis:
+    enabled: true
+    response_delay: "100ms"

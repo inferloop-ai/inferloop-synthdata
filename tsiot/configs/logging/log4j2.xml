@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN" monitorInterval="30">
+    
+    <!-- Properties -->
+    <Properties>
+        <Property name="LOG_PATTERN">%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n</Property>
+        <Property name="JSON_PATTERN">{"timestamp":"%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX}","level":"%level","thread":"%t","logger":"%logger","message":"%enc{%message}{JSON}","mdc":{%X},"exception":"%enc{%throwable}{JSON}"}%n</Property>
+        <Property name="LOG_DIR">${env:LOG_DIR:-./logs}</Property>
+        <Property name="LOG_LEVEL">${env:LOG_LEVEL:-INFO}</Property>
+    </Properties>
+
+    <!-- Appenders -->
+    <Appenders>
+        
+        <!-- Console Appender -->
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="${LOG_PATTERN}"/>
+            <ThresholdFilter level="DEBUG" onMatch="ACCEPT" onMismatch="DENY"/>
+        </Console>
+
+        <!-- JSON Console Appender -->
+        <Console name="JsonConsole" target="SYSTEM_OUT">
+            <JsonTemplateLayout eventTemplateUri="classpath:EcsLayout.json"/>
+        </Console>
+
+        <!-- Main Application Log File -->
+        <RollingFile name="FileAppender" 
+                     fileName="${LOG_DIR}/tsiot-server.log"
+                     filePattern="${LOG_DIR}/tsiot-server-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="${LOG_PATTERN}"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="100MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="30" compressionLevel="9">
+                <Delete basePath="${LOG_DIR}" maxDepth="1">
+                    <IfFileName glob="tsiot-server-*.log.gz"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+        </RollingFile>
+
+        <!-- JSON Log File -->
+        <RollingFile name="JsonFileAppender" 
+                     fileName="${LOG_DIR}/tsiot-server.json"
+                     filePattern="${LOG_DIR}/tsiot-server-%d{yyyy-MM-dd}-%i.json.gz">
+            <JsonTemplateLayout eventTemplateUri="classpath:EcsLayout.json"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="100MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="30" compressionLevel="9"/>
+        </RollingFile>
+
+        <!-- Error Log File -->
+        <RollingFile name="ErrorFileAppender" 
+                     fileName="${LOG_DIR}/tsiot-error.log"
+                     filePattern="${LOG_DIR}/tsiot-error-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="${LOG_PATTERN}"/>
+            <ThresholdFilter level="ERROR" onMatch="ACCEPT" onMismatch="DENY"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="50MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="90"/>
+        </RollingFile>
+
+        <!-- Audit Log File -->
+        <RollingFile name="AuditFileAppender" 
+                     fileName="${LOG_DIR}/tsiot-audit.log"
+                     filePattern="${LOG_DIR}/tsiot-audit-%d{yyyy-MM-dd}-%i.log.gz">
+            <JsonTemplateLayout eventTemplateUri="classpath:EcsLayout.json"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="200MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="365"/>
+        </RollingFile>
+
+        <!-- Performance Log File -->
+        <RollingFile name="PerformanceFileAppender" 
+                     fileName="${LOG_DIR}/tsiot-performance.log"
+                     filePattern="${LOG_DIR}/tsiot-performance-%d{yyyy-MM-dd}-%i.log.gz">
+            <JsonTemplateLayout eventTemplateUri="classpath:EcsLayout.json"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="100MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="7"/>
+        </RollingFile>
+
+        <!-- Security Log File -->
+        <RollingFile name="SecurityFileAppender" 
+                     fileName="${LOG_DIR}/tsiot-security.log"
+                     filePattern="${LOG_DIR}/tsiot-security-%d{yyyy-MM-dd}-%i.log.gz">
+            <JsonTemplateLayout eventTemplateUri="classpath:EcsLayout.json"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="100MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="365"/>
+        </RollingFile>
+
+        <!-- Generator Logs -->
+        <RollingFile name="GeneratorFileAppender" 
+                     fileName="${LOG_DIR}/tsiot-generators.log"
+                     filePattern="${LOG_DIR}/tsiot-generators-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="${LOG_PATTERN}"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="100MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="14"/>
+        </RollingFile>
+
+        <!-- Validation Logs -->
+        <RollingFile name="ValidationFileAppender" 
+                     fileName="${LOG_DIR}/tsiot-validation.log"
+                     filePattern="${LOG_DIR}/tsiot-validation-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="${LOG_PATTERN}"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="100MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="14"/>
+        </RollingFile>
+
+        <!-- MCP Protocol Logs -->
+        <RollingFile name="McpFileAppender" 
+                     fileName="${LOG_DIR}/tsiot-mcp.log"
+                     filePattern="${LOG_DIR}/tsiot-mcp-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="${LOG_PATTERN}"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="50MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="7"/>
+        </RollingFile>
+
+        <!-- Async Appenders for Performance -->
+        <AsyncRoot level="${LOG_LEVEL}" includeLocation="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="FileAppender"/>
+        </AsyncRoot>
+
+        <AsyncLogger name="ASYNC_FILE" additivity="false" includeLocation="false">
+            <AppenderRef ref="FileAppender"/>
+        </AsyncLogger>
+
+        <!-- Syslog Appender for Production -->
+        <Syslog name="Syslog" 
+                host="localhost" 
+                port="514" 
+                protocol="UDP" 
+                facility="LOCAL0"
+                connectTimeoutMillis="10000"
+                reconnectDelayMillis="5000">
+            <JsonTemplateLayout eventTemplateUri="classpath:EcsLayout.json"/>
+        </Syslog>
+
+        <!-- Socket Appender for Log Aggregation -->
+        <Socket name="Socket" 
+                host="${env:LOG_AGGREGATOR_HOST:-localhost}" 
+                port="${env:LOG_AGGREGATOR_PORT:-4560}"
+                protocol="TCP"
+                connectTimeoutMillis="10000"
+                reconnectDelayMillis="5000">
+            <JsonTemplateLayout eventTemplateUri="classpath:EcsLayout.json"/>
+        </Socket>
+
+    </Appenders>
+
+    <!-- Loggers -->
+    <Loggers>
+        
+        <!-- Application Loggers -->
+        <Logger name="com.inferloop.tsiot" level="${LOG_LEVEL}" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="FileAppender"/>
+            <AppenderRef ref="ErrorFileAppender"/>
+        </Logger>
+
+        <!-- Generator Loggers -->
+        <Logger name="com.inferloop.tsiot.generators" level="INFO" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="GeneratorFileAppender"/>
+        </Logger>
+
+        <!-- TimeGAN specific logging -->
+        <Logger name="com.inferloop.tsiot.generators.timegan" level="DEBUG" additivity="false">
+            <AppenderRef ref="GeneratorFileAppender"/>
+        </Logger>
+
+        <!-- ARIMA specific logging -->
+        <Logger name="com.inferloop.tsiot.generators.arima" level="INFO" additivity="false">
+            <AppenderRef ref="GeneratorFileAppender"/>
+        </Logger>
+
+        <!-- Validation Loggers -->
+        <Logger name="com.inferloop.tsiot.validation" level="INFO" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="ValidationFileAppender"/>
+        </Logger>
+
+        <!-- MCP Protocol Loggers -->
+        <Logger name="com.inferloop.tsiot.mcp" level="DEBUG" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="McpFileAppender"/>
+        </Logger>
+
+        <!-- Storage Loggers -->
+        <Logger name="com.inferloop.tsiot.storage" level="INFO" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="FileAppender"/>
+        </Logger>
+
+        <!-- Security Logger -->
+        <Logger name="SECURITY" level="INFO" additivity="false">
+            <AppenderRef ref="SecurityFileAppender"/>
+            <AppenderRef ref="Syslog"/>
+        </Logger>
+
+        <!-- Audit Logger -->
+        <Logger name="AUDIT" level="INFO" additivity="false">
+            <AppenderRef ref="AuditFileAppender"/>
+            <AppenderRef ref="Syslog"/>
+        </Logger>
+
+        <!-- Performance Logger -->
+        <Logger name="PERFORMANCE" level="INFO" additivity="false">
+            <AppenderRef ref="PerformanceFileAppender"/>
+        </Logger>
+
+        <!-- Third-party Library Loggers -->
+        <Logger name="org.springframework" level="WARN"/>
+        <Logger name="org.hibernate" level="WARN"/>
+        <Logger name="org.apache.kafka" level="WARN"/>
+        <Logger name="io.grpc" level="WARN"/>
+        <Logger name="org.influxdb" level="WARN"/>
+        <Logger name="com.zaxxer.hikari" level="WARN"/>
+        <Logger name="org.apache.http" level="WARN"/>
+        <Logger name="org.eclipse.jetty" level="WARN"/>
+
+        <!-- Database Query Loggers -->
+        <Logger name="org.hibernate.SQL" level="DEBUG" additivity="false">
+            <AppenderRef ref="FileAppender"/>
+        </Logger>
+
+        <!-- HTTP Request Loggers -->
+        <Logger name="org.springframework.web.servlet.DispatcherServlet" level="DEBUG" additivity="false">
+            <AppenderRef ref="FileAppender"/>
+        </Logger>
+
+        <!-- Metrics Logger -->
+        <Logger name="METRICS" level="INFO" additivity="false">
+            <AppenderRef ref="PerformanceFileAppender"/>
+        </Logger>
+
+        <!-- Root Logger -->
+        <Root level="${LOG_LEVEL}">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="FileAppender"/>
+            <AppenderRef ref="ErrorFileAppender"/>
+        </Root>
+
+    </Loggers>
+
+</Configuration>

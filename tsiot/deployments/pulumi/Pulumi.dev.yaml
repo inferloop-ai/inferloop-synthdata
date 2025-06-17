@@ -1,0 +1,114 @@
+config:
+  # AWS Configuration
+  aws:region: us-west-2
+  aws:profile: tsiot-dev
+  
+  # Project Configuration
+  tsiot:projectName: tsiot
+  tsiot:environment: dev
+  tsiot:owner: tsiot-dev-team
+  tsiot:costCenter: engineering-dev
+  
+  # Networking
+  tsiot:vpcCidr: 10.0.0.0/16
+  tsiot:availabilityZones:
+    - us-west-2a
+    - us-west-2b
+  tsiot:privateSubnetCidrs:
+    - 10.0.1.0/24
+    - 10.0.2.0/24
+  tsiot:publicSubnetCidrs:
+    - 10.0.101.0/24
+    - 10.0.102.0/24
+  tsiot:databaseSubnetCidrs:
+    - 10.0.201.0/24
+    - 10.0.202.0/24
+  
+  # EKS Configuration
+  tsiot:clusterName: tsiot-dev-cluster
+  tsiot:clusterVersion: "1.28"
+  tsiot:nodeGroups:
+    general:
+      instanceTypes:
+        - m5.large
+      scalingConfig:
+        desiredSize: 1
+        maxSize: 3
+        minSize: 1
+      diskSize: 50
+      capacityType: ON_DEMAND
+    compute:
+      instanceTypes:
+        - c5.large
+      scalingConfig:
+        desiredSize: 0
+        maxSize: 2
+        minSize: 0
+      diskSize: 50
+      capacityType: SPOT
+  
+  # RDS Configuration
+  tsiot:rdsInstanceClass: db.t3.medium
+  tsiot:rdsEngineVersion: "15.4"
+  tsiot:rdsAllocatedStorage: 20
+  tsiot:rdsMaxAllocatedStorage: 100
+  tsiot:rdsBackupRetentionPeriod: 3
+  tsiot:rdsMultiAz: false
+  
+  # ElastiCache Configuration
+  tsiot:redisNodeType: cache.t3.micro
+  tsiot:redisNumCacheNodes: 1
+  tsiot:redisEngineVersion: "7.0"
+  
+  # OpenSearch Configuration
+  tsiot:opensearchInstanceType: t3.small.search
+  tsiot:opensearchInstanceCount: 1
+  tsiot:opensearchEbsVolumeSize: 20
+  
+  # MSK Configuration
+  tsiot:kafkaInstanceType: kafka.t3.small
+  tsiot:kafkaEbsVolumeSize: 50
+  tsiot:kafkaVersion: "3.5.1"
+  
+  # Application Configuration
+  tsiot:applicationImageTag: latest
+  tsiot:applicationReplicas: 1
+  tsiot:workerReplicas: 1
+  
+  # Resource Limits (Development)
+  tsiot:serverResources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1
+      memory: 2Gi
+  tsiot:workerResources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+  
+  # Feature Flags
+  tsiot:enableMonitoring: true
+  tsiot:enableLogging: true
+  tsiot:enableTracing: false
+  tsiot:enableEncryption: false
+  tsiot:enableSpotInstances: true
+  tsiot:enableClusterAutoscaler: true
+  tsiot:enableGpuNodes: false
+  
+  # Security
+  tsiot:allowedCidrBlocks:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+  
+  # Domain and DNS
+  tsiot:domainName: ""
+  tsiot:createRoute53Zone: false
+  
+  # Cost Optimization
+  tsiot:backupRetentionDays: 7
+  tsiot:enablePointInTimeRecovery: false

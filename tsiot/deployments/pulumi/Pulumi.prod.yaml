@@ -1,0 +1,145 @@
+config:
+  # AWS Configuration
+  aws:region: us-west-2
+  aws:profile: tsiot-prod
+  
+  # Project Configuration
+  tsiot:projectName: tsiot
+  tsiot:environment: prod
+  tsiot:owner: tsiot-prod-team
+  tsiot:costCenter: engineering-prod
+  
+  # Networking
+  tsiot:vpcCidr: 10.0.0.0/16
+  tsiot:availabilityZones:
+    - us-west-2a
+    - us-west-2b
+    - us-west-2c
+  tsiot:privateSubnetCidrs:
+    - 10.0.1.0/24
+    - 10.0.2.0/24
+    - 10.0.3.0/24
+  tsiot:publicSubnetCidrs:
+    - 10.0.101.0/24
+    - 10.0.102.0/24
+    - 10.0.103.0/24
+  tsiot:databaseSubnetCidrs:
+    - 10.0.201.0/24
+    - 10.0.202.0/24
+    - 10.0.203.0/24
+  
+  # EKS Configuration
+  tsiot:clusterName: tsiot-prod-cluster
+  tsiot:clusterVersion: "1.28"
+  tsiot:nodeGroups:
+    general:
+      instanceTypes:
+        - m5.large
+        - m5.xlarge
+      scalingConfig:
+        desiredSize: 3
+        maxSize: 10
+        minSize: 2
+      diskSize: 100
+      capacityType: ON_DEMAND
+    compute:
+      instanceTypes:
+        - c5.2xlarge
+        - c5.4xlarge
+      scalingConfig:
+        desiredSize: 2
+        maxSize: 8
+        minSize: 1
+      diskSize: 200
+      capacityType: ON_DEMAND
+    memory:
+      instanceTypes:
+        - r5.large
+        - r5.xlarge
+      scalingConfig:
+        desiredSize: 1
+        maxSize: 5
+        minSize: 0
+      diskSize: 100
+      capacityType: SPOT
+  
+  # RDS Configuration
+  tsiot:rdsInstanceClass: db.r5.2xlarge
+  tsiot:rdsEngineVersion: "15.4"
+  tsiot:rdsAllocatedStorage: 500
+  tsiot:rdsMaxAllocatedStorage: 2000
+  tsiot:rdsBackupRetentionPeriod: 30
+  tsiot:rdsMultiAz: true
+  
+  # ElastiCache Configuration
+  tsiot:redisNodeType: cache.r6g.large
+  tsiot:redisNumCacheNodes: 3
+  tsiot:redisEngineVersion: "7.0"
+  
+  # OpenSearch Configuration
+  tsiot:opensearchInstanceType: r6g.large.search
+  tsiot:opensearchInstanceCount: 3
+  tsiot:opensearchEbsVolumeSize: 100
+  
+  # MSK Configuration
+  tsiot:kafkaInstanceType: kafka.m5.large
+  tsiot:kafkaEbsVolumeSize: 200
+  tsiot:kafkaVersion: "3.5.1"
+  
+  # Application Configuration
+  tsiot:applicationImageTag: stable
+  tsiot:applicationReplicas: 3
+  tsiot:workerReplicas: 5
+  
+  # Resource Limits (Production)
+  tsiot:serverResources:
+    requests:
+      cpu: 1
+      memory: 2Gi
+    limits:
+      cpu: 4
+      memory: 8Gi
+  tsiot:workerResources:
+    requests:
+      cpu: 2
+      memory: 4Gi
+    limits:
+      cpu: 8
+      memory: 16Gi
+  
+  # Feature Flags
+  tsiot:enableMonitoring: true
+  tsiot:enableLogging: true
+  tsiot:enableTracing: true
+  tsiot:enableEncryption: true
+  tsiot:enableSpotInstances: false
+  tsiot:enableClusterAutoscaler: true
+  tsiot:enableGpuNodes: true
+  
+  # GPU Configuration
+  tsiot:gpuNodeConfig:
+    instanceTypes:
+      - g4dn.xlarge
+      - g4dn.2xlarge
+    scalingConfig:
+      desiredSize: 0
+      maxSize: 3
+      minSize: 0
+  
+  # Security
+  tsiot:allowedCidrBlocks:
+    - 10.0.0.0/8
+  
+  # Domain and DNS
+  tsiot:domainName: "tsiot.example.com"
+  tsiot:createRoute53Zone: true
+  tsiot:sslCertificateArn: "arn:aws:acm:us-west-2:123456789012:certificate/12345678-1234-1234-1234-123456789012"
+  
+  # High Availability and Disaster Recovery
+  tsiot:backupRetentionDays: 90
+  tsiot:enablePointInTimeRecovery: true
+  tsiot:enableCrossRegionBackup: true
+  
+  # Performance
+  tsiot:enablePerformanceInsights: true
+  tsiot:performanceInsightsRetentionPeriod: 31

@@ -1,0 +1,641 @@
+# Production environment values for TSIoT Platform
+# This file overrides values.yaml for production deployments
+
+# Global configuration overrides
+global:
+  environment: production
+  imageRegistry: "123456789012.dkr.ecr.us-west-2.amazonaws.com"
+  imagePullPolicy: IfNotPresent  # Use specific tags in production
+
+# TSIoT Server configuration for production
+server:
+  # High availability with multiple replicas
+  replicaCount: 3
+  
+  # Image configuration
+  image:
+    tag: "1.0.0"  # Use specific stable tags in production
+    pullPolicy: IfNotPresent
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+  
+  # Ingress configuration for production
+  ingress:
+    enabled: true
+    className: alb
+    annotations:
+      kubernetes.io/ingress.class: "alb"
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-west-2:123456789012:certificate/prod-cert"
+      alb.ingress.kubernetes.io/wafv2-acl-arn: "arn:aws:wafv2:us-west-2:123456789012:regional/webacl/tsiot-waf/12345"
+      alb.ingress.kubernetes.io/load-balancer-attributes: |
+        idle_timeout.timeout_seconds=60,
+        routing.http2.enabled=true,
+        access_logs.s3.enabled=true,
+        access_logs.s3.bucket=tsiot-prod-alb-logs,
+        access_logs.s3.prefix=tsiot-server
+    hosts:
+      - host: api.tsiot.com
+        paths:
+          - path: /
+            pathType: Prefix
+      - host: api-v1.tsiot.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: tsiot-prod-tls-secret
+        hosts:
+          - api.tsiot.com
+          - api-v1.tsiot.com
+  
+  # Production resource configuration
+  resources:
+    requests:
+      cpu: 1
+      memory: 2Gi
+    limits:
+      cpu: 4
+      memory: 8Gi
+  
+  # Autoscaling configuration for production
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+          - type: Percent
+            value: 10
+            periodSeconds: 60
+      scaleUp:
+        stabilizationWindowSeconds: 60
+        policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 60
+  
+  # Production environment variables
+  env:
+    TSIOT_ENV: production
+    TSIOT_LOG_LEVEL: info
+    TSIOT_ENABLE_PROFILING: "false"
+    TSIOT_ENABLE_DEBUG_ENDPOINTS: "false"
+    TSIOT_MAX_REQUEST_SIZE: "32MB"
+    TSIOT_RATE_LIMIT_ENABLED: "true"
+    TSIOT_RATE_LIMIT_REQUESTS: "1000"
+    TSIOT_CORS_ORIGINS: "https://dashboard.tsiot.com,https://app.tsiot.com"
+  
+  # Strict probes for production
+  livenessProbe:
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  
+  # Production affinity rules
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - tsiot-server
+          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - tsiot-server
+            topologyKey: topology.kubernetes.io/zone
+
+# TSIoT Worker configuration for production
+worker:
+  # High capacity worker fleet
+  replicaCount: 5
+  
+  # Image configuration
+  image:
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  
+  # Production resource configuration
+  resources:
+    requests:
+      cpu: 2
+      memory: 4Gi
+    limits:
+      cpu: 8
+      memory: 16Gi
+  
+  # Aggressive autoscaling for workers
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 50
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 85
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 600  # Longer stabilization for workers
+        policies:
+          - type: Percent
+            value: 20
+            periodSeconds: 120
+      scaleUp:
+        stabilizationWindowSeconds: 30
+        policies:
+          - type: Percent
+            value: 100
+            periodSeconds: 30
+  
+  # Production environment variables
+  env:
+    TSIOT_WORKER_CONCURRENCY: "8"
+    TSIOT_WORKER_QUEUE_SIZE: "2000"
+    TSIOT_WORKER_BATCH_SIZE: "200"
+    TSIOT_WORKER_TIMEOUT: "600s"
+    TSIOT_LOG_LEVEL: info
+  
+  # Node selector for compute-optimized instances
+  nodeSelector:
+    node-type: compute
+    instance-type: compute-optimized
+  
+  # Tolerations for dedicated compute nodes
+  tolerations:
+    - key: compute-intensive
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+    - key: dedicated
+      operator: Equal
+      value: "compute"
+      effect: NoSchedule
+  
+  # Production affinity rules for workers
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - tsiot-worker
+            topologyKey: kubernetes.io/hostname
+        - weight: 50
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - tsiot-worker
+            topologyKey: topology.kubernetes.io/zone
+
+# Database dependencies (production configurations)
+postgresql:
+  enabled: false  # Use managed RDS in production
+  
+  # Configuration for external RDS instance
+  external:
+    enabled: true
+    host: "tsiot-prod-db.cluster-xyz.us-west-2.rds.amazonaws.com"
+    port: 5432
+    database: tsiot
+    existingSecret: "tsiot-database-credentials"
+    userKey: "username"
+    passwordKey: "password"
+
+redis:
+  enabled: false  # Use managed ElastiCache in production
+  
+  # Configuration for external ElastiCache
+  external:
+    enabled: true
+    host: "tsiot-prod-redis.abc123.cache.amazonaws.com"
+    port: 6379
+    existingSecret: "tsiot-redis-credentials"
+    passwordKey: "password"
+
+kafka:
+  enabled: false  # Use managed MSK in production
+  
+  # Configuration for external MSK
+  external:
+    enabled: true
+    brokers:
+      - "b-1.tsiot-prod-kafka.123456.c2.kafka.us-west-2.amazonaws.com:9092"
+      - "b-2.tsiot-prod-kafka.123456.c2.kafka.us-west-2.amazonaws.com:9092"
+      - "b-3.tsiot-prod-kafka.123456.c2.kafka.us-west-2.amazonaws.com:9092"
+    existingSecret: "tsiot-kafka-credentials"
+    usernameKey: "username"
+    passwordKey: "password"
+
+influxdb:
+  enabled: false  # Use managed InfluxDB Cloud or self-hosted production instance
+  
+  # Configuration for external InfluxDB
+  external:
+    enabled: true
+    url: "https://tsiot-prod-influxdb.amazonaws.com:8086"
+    organization: "tsiot"
+    bucket: "timeseries"
+    existingSecret: "tsiot-influxdb-credentials"
+    tokenKey: "token"
+
+elasticsearch:
+  enabled: false  # Use managed OpenSearch in production
+  
+  # Configuration for external OpenSearch
+  external:
+    enabled: true
+    url: "https://search-tsiot-prod.us-west-2.es.amazonaws.com"
+    existingSecret: "tsiot-elasticsearch-credentials"
+    usernameKey: "username"
+    passwordKey: "password"
+
+# Monitoring configuration for production
+monitoring:
+  enabled: true
+  
+  prometheus:
+    enabled: true
+    
+    server:
+      persistentVolume:
+        enabled: true
+        size: 500Gi  # Large storage for production metrics
+      
+      resources:
+        requests:
+          cpu: 2
+          memory: 8Gi
+        limits:
+          cpu: 4
+          memory: 16Gi
+      
+      retention: "90d"  # Long retention in production
+      retentionSize: "400GB"
+      
+      # High availability configuration
+      replicaCount: 2
+      
+      # Advanced configuration
+      extraArgs:
+        - "--query.max-concurrency=40"
+        - "--query.max-samples=50000000"
+        - "--web.enable-admin-api"
+        - "--web.enable-lifecycle"
+    
+    alertmanager:
+      enabled: true
+      
+      persistentVolume:
+        enabled: true
+        size: 20Gi
+      
+      resources:
+        requests:
+          cpu: 200m
+          memory: 256Mi
+        limits:
+          cpu: 1
+          memory: 1Gi
+      
+      # High availability configuration
+      replicaCount: 3
+      
+      # Production alerting configuration
+      config:
+        global:
+          smtp_smarthost: 'smtp.amazonaws.com:587'
+          smtp_from: 'alerts@tsiot.com'
+        
+        route:
+          group_by: ['alertname', 'cluster', 'service']
+          group_wait: 10s
+          group_interval: 10s
+          repeat_interval: 1h
+          receiver: 'default'
+          routes:
+            - match:
+                severity: critical
+              receiver: 'critical-alerts'
+              repeat_interval: 5m
+    
+    nodeExporter:
+      enabled: true
+      hostNetwork: true
+      hostPID: true
+    
+    kubeStateMetrics:
+      enabled: true
+    
+    pushgateway:
+      enabled: true
+      persistentVolume:
+        enabled: true
+        size: 10Gi
+  
+  grafana:
+    enabled: true
+    
+    persistence:
+      enabled: true
+      size: 50Gi
+    
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+    
+    # High availability configuration
+    replicas: 2
+    
+    # Production Grafana configuration
+    grafana.ini:
+      server:
+        protocol: https
+        domain: grafana.tsiot.com
+        root_url: https://grafana.tsiot.com
+      
+      security:
+        admin_user: admin
+        secret_key: "production-secret-key-change-me"
+      
+      auth:
+        disable_login_form: false
+        oauth_auto_login: true
+      
+      auth.github:
+        enabled: true
+        allow_sign_up: true
+        client_id: "github-oauth-client-id"
+        client_secret: "github-oauth-client-secret"
+        scopes: "user:email,read:org"
+        auth_url: "https://github.com/login/oauth/authorize"
+        token_url: "https://github.com/login/oauth/access_token"
+        api_url: "https://api.github.com/user"
+        allowed_organizations: "tsiot-org"
+      
+      smtp:
+        enabled: true
+        host: "smtp.amazonaws.com:587"
+        user: "grafana@tsiot.com"
+        password: "smtp-password-from-secret"
+        from_address: "grafana@tsiot.com"
+        from_name: "TSIoT Grafana"
+
+# Security configuration for production
+security:
+  # Strict security for production
+  podSecurityStandards:
+    enforce: restricted
+    audit: restricted
+    warn: restricted
+  
+  # Network policies enabled for production
+  networkPolicies:
+    enabled: true
+    
+    ingress:
+      enabled: true
+      allowedNamespaces:
+        - kube-system
+        - tsiot-monitoring
+        - ingress-nginx
+      allowedPorts:
+        - 8080  # Server HTTP
+        - 9090  # Server gRPC
+        - 8081  # Worker health
+    
+    egress:
+      enabled: true
+      allowedPorts:
+        - 53    # DNS
+        - 80    # HTTP
+        - 443   # HTTPS
+        - 5432  # PostgreSQL
+        - 6379  # Redis
+        - 9092  # Kafka
+        - 8086  # InfluxDB
+        - 9200  # Elasticsearch
+      denyAll: false
+  
+  # RBAC with AWS IAM integration
+  rbac:
+    create: true
+    
+    serviceAccounts:
+      server:
+        create: true
+        annotations:
+          eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/tsiot-prod-server-role"
+          eks.amazonaws.com/sts-regional-endpoints: "true"
+      worker:
+        create: true
+        annotations:
+          eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/tsiot-prod-worker-role"
+          eks.amazonaws.com/sts-regional-endpoints: "true"
+
+# Service mesh configuration for production
+serviceMesh:
+  enabled: true
+  
+  istio:
+    enabled: true
+    
+    virtualService:
+      enabled: true
+      hosts:
+        - api.tsiot.com
+        - api-v1.tsiot.com
+      gateways:
+        - tsiot-gateway
+      http:
+        - match:
+            - uri:
+                prefix: "/api/v1"
+          route:
+            - destination:
+                host: tsiot-server
+                port:
+                  number: 8080
+          timeout: 30s
+          retries:
+            attempts: 3
+            perTryTimeout: 10s
+    
+    destinationRule:
+      enabled: true
+      trafficPolicy:
+        tls:
+          mode: ISTIO_MUTUAL
+        connectionPool:
+          tcp:
+            maxConnections: 100
+          http:
+            http1MaxPendingRequests: 50
+            maxRequestsPerConnection: 10
+        outlierDetection:
+          consecutiveErrors: 3
+          interval: 30s
+          baseEjectionTime: 30s
+
+# Backup and disaster recovery for production
+backup:
+  enabled: true
+  
+  velero:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    ttl: "2160h"           # 90 days
+    includedNamespaces:
+      - tsiot
+      - tsiot-monitoring
+    
+    storageLocation:
+      bucket: tsiot-prod-backups
+      prefix: velero
+      region: us-west-2
+  
+  postgresql:
+    enabled: true
+    schedule: "0 1 * * *"  # Daily at 1 AM
+    retention: "90d"
+    s3:
+      bucket: tsiot-prod-db-backups
+      region: us-west-2
+  
+  storage:
+    enabled: true
+    schedule: "0 3 * * *"  # Daily at 3 AM
+    s3:
+      bucket: tsiot-prod-storage-backups
+      region: us-west-2
+
+# Feature flags for production
+features:
+  # GPU support enabled for ML workloads
+  gpu:
+    enabled: true
+    nodeSelector:
+      nvidia.com/gpu: "true"
+      node-type: gpu
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+      - key: dedicated
+        operator: Equal
+        value: "gpu"
+        effect: NoSchedule
+  
+  # No experimental features in production
+  experimental:
+    enabled: false
+  
+  # High availability enabled
+  highAvailability:
+    enabled: true
+    multiAZ: true
+    crossRegion: false  # Set to true for disaster recovery
+
+# Testing disabled in production
+testing:
+  enabled: false
+
+# Production-specific configurations
+production:
+  # SSL/TLS certificates
+  tls:
+    enabled: true
+    certificateArns:
+      - "arn:aws:acm:us-west-2:123456789012:certificate/prod-api-cert"
+      - "arn:aws:acm:us-west-2:123456789012:certificate/prod-grafana-cert"
+  
+  # WAF configuration
+  waf:
+    enabled: true
+    aclArn: "arn:aws:wafv2:us-west-2:123456789012:regional/webacl/tsiot-prod-waf/12345"
+    rules:
+      - name: AWSManagedRulesCommonRuleSet
+        priority: 1
+      - name: AWSManagedRulesKnownBadInputsRuleSet
+        priority: 2
+      - name: AWSManagedRulesLinuxRuleSet
+        priority: 3
+  
+  # CloudWatch integration
+  cloudwatch:
+    enabled: true
+    logGroups:
+      - name: "/aws/eks/tsiot-prod/application"
+        retentionDays: 90
+      - name: "/aws/eks/tsiot-prod/performance"
+        retentionDays: 30
+  
+  # X-Ray tracing
+  xray:
+    enabled: true
+    samplingRate: 0.1
+    
+# Cost optimization
+costOptimization:
+  # Spot instances for non-critical workloads
+  spot:
+    enabled: true
+    percentage: 50  # 50% spot instances for workers
+  
+  # Cluster autoscaler
+  clusterAutoscaler:
+    enabled: true
+    scaleDownDelayAfterAdd: "10m"
+    scaleDownUnneededTime: "10m"
+    skipNodesWithLocalStorage: false
+    skipNodesWithSystemPods: false
+  
+  # Vertical Pod Autoscaler
+  vpa:
+    enabled: true
+    updateMode: "Auto"
+    
+  # Horizontal Pod Autoscaler v2
+  hpa:
+    version: v2
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+      scaleUp:
+        stabilizationWindowSeconds: 60

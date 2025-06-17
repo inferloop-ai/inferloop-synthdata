@@ -1,0 +1,639 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "2.47.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+      app.kubernetes.io/instance: tsiot
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus
+        app.kubernetes.io/instance: tsiot
+        app.kubernetes.io/version: "2.47.0"
+        app.kubernetes.io/component: monitoring
+        app.kubernetes.io/part-of: tsiot-platform
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: prometheus
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.47.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - '--config.file=/etc/prometheus/prometheus.yml'
+            - '--storage.tsdb.path=/prometheus'
+            - '--web.console.libraries=/etc/prometheus/console_libraries'
+            - '--web.console.templates=/etc/prometheus/consoles'
+            - '--storage.tsdb.retention.time=30d'
+            - '--storage.tsdb.retention.size=50GB'
+            - '--web.enable-lifecycle'
+            - '--web.enable-admin-api'
+            - '--web.external-url=http://prometheus.tsiot-monitoring.svc.cluster.local:9090'
+            - '--web.route-prefix=/'
+            - '--query.max-concurrency=20'
+            - '--query.timeout=2m'
+            - '--storage.tsdb.max-block-duration=2h'
+            - '--storage.tsdb.min-block-duration=2h'
+          ports:
+            - name: web
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: TZ
+              value: "UTC"
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: web
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: web
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 4
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: 2
+              memory: 8Gi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: rules
+              mountPath: /etc/prometheus/rules
+            - name: storage
+              mountPath: /prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: rules
+          configMap:
+            name: prometheus-rules
+        - name: storage
+          persistentVolumeClaim:
+            claimName: prometheus-storage
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - key: "monitoring"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "2.47.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+    - name: web
+      port: 9090
+      targetPort: web
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: tsiot
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-storage
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "2.47.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+  resources:
+    requests:
+      storage: 100Gi
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "2.47.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+automountServiceAccountToken: true
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "2.47.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/proxy
+      - nodes/metrics
+      - services
+      - endpoints
+      - pods
+      - ingresses
+      - configmaps
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["extensions", "networking.k8s.io"]
+    resources:
+      - ingresses
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - daemonsets
+      - statefulsets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "2.47.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: tsiot-monitoring
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "2.47.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'tsiot-cluster'
+        environment: 'production'
+        region: 'us-west-2'
+
+    rule_files:
+      - "/etc/prometheus/rules/*.yml"
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+              - alertmanager:9093
+
+    scrape_configs:
+      # Prometheus itself
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+        scrape_interval: 15s
+        metrics_path: /metrics
+
+      # TSIoT Server
+      - job_name: 'tsiot-server'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - tsiot
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: tsiot-server-internal
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: metrics
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: kubernetes_name
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: kubernetes_pod_name
+        scrape_interval: 30s
+        metrics_path: /metrics
+
+      # TSIoT Worker
+      - job_name: 'tsiot-worker'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - tsiot
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: tsiot-worker
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: metrics
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: kubernetes_name
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: kubernetes_pod_name
+        scrape_interval: 30s
+        metrics_path: /metrics
+
+      # Kubernetes API Server
+      - job_name: 'kubernetes-apiservers'
+        kubernetes_sd_configs:
+          - role: endpoints
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: default;kubernetes;https
+
+      # Kubernetes Nodes
+      - job_name: 'kubernetes-nodes'
+        kubernetes_sd_configs:
+          - role: node
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+          - target_label: __address__
+            replacement: kubernetes.default.svc:443
+          - source_labels: [__meta_kubernetes_node_name]
+            regex: (.+)
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/${1}/proxy/metrics
+
+      # Kubernetes Node Exporter
+      - job_name: 'kubernetes-nodes-cadvisor'
+        kubernetes_sd_configs:
+          - role: node
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+          - target_label: __address__
+            replacement: kubernetes.default.svc:443
+          - source_labels: [__meta_kubernetes_node_name]
+            regex: (.+)
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+
+      # Kubernetes Service Endpoints
+      - job_name: 'kubernetes-service-endpoints'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+            action: replace
+            target_label: __scheme__
+            regex: (https?)
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+          - action: labelmap
+            regex: __meta_kubernetes_service_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: kubernetes_name
+
+      # Kubernetes Pods
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+
+      # InfluxDB
+      - job_name: 'influxdb'
+        static_configs:
+          - targets: ['influxdb-service.tsiot.svc.cluster.local:8086']
+        scrape_interval: 30s
+        metrics_path: /metrics
+
+      # Redis
+      - job_name: 'redis'
+        static_configs:
+          - targets: ['redis-exporter.tsiot.svc.cluster.local:9121']
+        scrape_interval: 30s
+
+      # PostgreSQL
+      - job_name: 'postgresql'
+        static_configs:
+          - targets: ['postgres-exporter.tsiot.svc.cluster.local:9187']
+        scrape_interval: 30s
+
+      # Elasticsearch
+      - job_name: 'elasticsearch'
+        static_configs:
+          - targets: ['elasticsearch-exporter.tsiot.svc.cluster.local:9114']
+        scrape_interval: 30s
+
+      # Kafka
+      - job_name: 'kafka'
+        static_configs:
+          - targets: ['kafka-exporter.tsiot.svc.cluster.local:9308']
+        scrape_interval: 30s
+
+      # NGINX Ingress Controller
+      - job_name: 'nginx-ingress'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - ingress-nginx
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scheme]
+            action: replace
+            target_label: __scheme__
+            regex: (https?)
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: tsiot-monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "2.47.0"
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+data:
+  tsiot-alerts.yml: |
+    groups:
+      - name: tsiot.rules
+        rules:
+          # TSIoT Server Health
+          - alert: TSIoTServerDown
+            expr: up{job="tsiot-server"} == 0
+            for: 1m
+            labels:
+              severity: critical
+              service: tsiot-server
+            annotations:
+              summary: "TSIoT Server is down"
+              description: "TSIoT Server has been down for more than 1 minute."
+
+          - alert: TSIoTServerHighMemory
+            expr: (container_memory_usage_bytes{pod=~"tsiot-server.*"} / container_spec_memory_limit_bytes{pod=~"tsiot-server.*"}) > 0.8
+            for: 5m
+            labels:
+              severity: warning
+              service: tsiot-server
+            annotations:
+              summary: "TSIoT Server high memory usage"
+              description: "TSIoT Server memory usage is above 80% for more than 5 minutes."
+
+          - alert: TSIoTServerHighCPU
+            expr: rate(container_cpu_usage_seconds_total{pod=~"tsiot-server.*"}[5m]) > 0.8
+            for: 5m
+            labels:
+              severity: warning
+              service: tsiot-server
+            annotations:
+              summary: "TSIoT Server high CPU usage"
+              description: "TSIoT Server CPU usage is above 80% for more than 5 minutes."
+
+          # TSIoT Worker Health
+          - alert: TSIoTWorkerDown
+            expr: up{job="tsiot-worker"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: tsiot-worker
+            annotations:
+              summary: "TSIoT Worker is down"
+              description: "TSIoT Worker has been down for more than 2 minutes."
+
+          - alert: TSIoTWorkerQueueBacklog
+            expr: tsiot_worker_queue_size > 1000
+            for: 5m
+            labels:
+              severity: warning
+              service: tsiot-worker
+            annotations:
+              summary: "TSIoT Worker queue backlog"
+              description: "TSIoT Worker queue has more than 1000 pending jobs for more than 5 minutes."
+
+          # Database Health
+          - alert: PostgreSQLDown
+            expr: up{job="postgresql"} == 0
+            for: 1m
+            labels:
+              severity: critical
+              service: postgresql
+            annotations:
+              summary: "PostgreSQL is down"
+              description: "PostgreSQL database has been down for more than 1 minute."
+
+          - alert: RedisDown
+            expr: up{job="redis"} == 0
+            for: 1m
+            labels:
+              severity: critical
+              service: redis
+            annotations:
+              summary: "Redis is down"
+              description: "Redis cache has been down for more than 1 minute."
+
+          # Storage Health
+          - alert: InfluxDBDown
+            expr: up{job="influxdb"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: influxdb
+            annotations:
+              summary: "InfluxDB is down"
+              description: "InfluxDB time series database has been down for more than 2 minutes."
+
+          - alert: ElasticsearchDown
+            expr: up{job="elasticsearch"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: elasticsearch
+            annotations:
+              summary: "Elasticsearch is down"
+              description: "Elasticsearch search engine has been down for more than 2 minutes."
+
+          # Kubernetes Cluster Health
+          - alert: KubernetesNodeNotReady
+            expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+            for: 10m
+            labels:
+              severity: warning
+              service: kubernetes
+            annotations:
+              summary: "Kubernetes node not ready"
+              description: "Node {{ $labels.node }} has been not ready for more than 10 minutes."
+
+          - alert: KubernetesPodCrashLooping
+            expr: rate(kube_pod_container_status_restarts_total[5m]) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: kubernetes
+            annotations:
+              summary: "Pod is crash looping"
+              description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping."
+
+          # Resource Usage
+          - alert: HighMemoryUsage
+            expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.9
+            for: 5m
+            labels:
+              severity: warning
+              service: node
+            annotations:
+              summary: "High memory usage"
+              description: "Node {{ $labels.instance }} memory usage is above 90% for more than 5 minutes."
+
+          - alert: HighDiskUsage
+            expr: (node_filesystem_size_bytes{fstype!="tmpfs"} - node_filesystem_free_bytes{fstype!="tmpfs"}) / node_filesystem_size_bytes{fstype!="tmpfs"} > 0.85
+            for: 5m
+            labels:
+              severity: warning
+              service: node
+            annotations:
+              summary: "High disk usage"
+              description: "Node {{ $labels.instance }} disk usage is above 85% for more than 5 minutes."

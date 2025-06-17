@@ -1,0 +1,24 @@
+dependencies:
+- name: postgresql
+  repository: https://charts.bitnami.com/bitnami
+  version: 12.12.10
+- name: redis
+  repository: https://charts.bitnami.com/bitnami
+  version: 17.15.6
+- name: kafka
+  repository: https://charts.bitnami.com/bitnami
+  version: 22.1.5
+- name: influxdb
+  repository: https://helm.influxdata.com/
+  version: 5.10.0
+- name: elasticsearch
+  repository: https://helm.elastic.co
+  version: 8.5.1
+- name: prometheus
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 23.4.0
+- name: grafana
+  repository: https://grafana.github.io/helm-charts
+  version: 6.60.4
+digest: sha256:f1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0d1e2
+generated: "2023-12-15T10:30:00.000Z"

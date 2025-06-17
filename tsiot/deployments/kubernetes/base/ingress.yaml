@@ -1,0 +1,354 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tsiot-server-ingress
+  namespace: tsiot
+  labels:
+    app.kubernetes.io/name: tsiot-server
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: server
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    # AWS Load Balancer Controller annotations
+    kubernetes.io/ingress.class: "alb"
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/load-balancer-name: tsiot-server-alb
+    alb.ingress.kubernetes.io/group.name: tsiot-main
+    alb.ingress.kubernetes.io/group.order: "1"
+    
+    # SSL/TLS Configuration
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-west-2:123456789012:certificate/12345678-1234-1234-1234-123456789012"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-2017-01
+    
+    # Health Check Configuration
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "30"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+    
+    # Load Balancer Attributes
+    alb.ingress.kubernetes.io/load-balancer-attributes: |
+      idle_timeout.timeout_seconds=60,
+      routing.http2.enabled=true,
+      access_logs.s3.enabled=true,
+      access_logs.s3.bucket=tsiot-alb-access-logs,
+      access_logs.s3.prefix=tsiot-server
+    
+    # Security and CORS
+    alb.ingress.kubernetes.io/cors.allow-origin: "https://app.tsiot.com,https://dashboard.tsiot.com"
+    alb.ingress.kubernetes.io/cors.allow-methods: "GET,POST,PUT,DELETE,OPTIONS,PATCH"
+    alb.ingress.kubernetes.io/cors.allow-headers: "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Requested-With"
+    alb.ingress.kubernetes.io/cors.max-age: "86400"
+    
+    # WAF Configuration
+    alb.ingress.kubernetes.io/wafv2-acl-arn: "arn:aws:wafv2:us-west-2:123456789012:regional/webacl/tsiot-waf/12345678-1234-1234-1234-123456789012"
+    
+    # Rate Limiting
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    
+    # Additional Security Headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+      more_set_headers "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'";
+spec:
+  ingressClassName: alb
+  tls:
+    - hosts:
+        - api.tsiot.com
+        - api-v1.tsiot.com
+      secretName: tsiot-tls-secret
+  rules:
+    - host: api.tsiot.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tsiot-server-internal
+                port:
+                  number: 8080
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: tsiot-server-internal
+                port:
+                  number: 8080
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: tsiot-server-internal
+                port:
+                  number: 8088
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: tsiot-server-internal
+                port:
+                  number: 9091
+    - host: api-v1.tsiot.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tsiot-server-internal
+                port:
+                  number: 8080
+
+---
+# Internal ingress for monitoring and admin endpoints
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tsiot-internal-ingress
+  namespace: tsiot
+  labels:
+    app.kubernetes.io/name: tsiot-internal
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: internal
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    kubernetes.io/ingress.class: "alb"
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/load-balancer-name: tsiot-internal-alb
+    alb.ingress.kubernetes.io/group.name: tsiot-internal
+    alb.ingress.kubernetes.io/group.order: "1"
+    
+    # IP Whitelist for internal access
+    alb.ingress.kubernetes.io/inbound-cidrs: "10.0.0.0/8,172.16.0.0/12"
+    
+    # SSL Configuration
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-west-2:123456789012:certificate/internal-12345678-1234-1234-1234-123456789012"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    
+    # Basic Auth for sensitive endpoints
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: tsiot-basic-auth
+    nginx.ingress.kubernetes.io/auth-realm: "TSIoT Internal Access"
+spec:
+  ingressClassName: alb
+  tls:
+    - hosts:
+        - internal.tsiot.com
+        - admin.tsiot.com
+      secretName: tsiot-internal-tls-secret
+  rules:
+    - host: internal.tsiot.com
+      http:
+        paths:
+          - path: /metrics
+            pathType: Prefix
+            backend:
+              service:
+                name: tsiot-server-internal
+                port:
+                  number: 9091
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: tsiot-server-internal
+                port:
+                  number: 8080
+          - path: /debug
+            pathType: Prefix
+            backend:
+              service:
+                name: tsiot-server-internal
+                port:
+                  number: 8080
+    - host: admin.tsiot.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tsiot-server-internal
+                port:
+                  number: 8080
+
+---
+# GRPC Ingress for gRPC services
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tsiot-grpc-ingress
+  namespace: tsiot
+  labels:
+    app.kubernetes.io/name: tsiot-grpc
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: grpc
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    kubernetes.io/ingress.class: "alb"
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/load-balancer-name: tsiot-grpc-alb
+    alb.ingress.kubernetes.io/group.name: tsiot-grpc
+    alb.ingress.kubernetes.io/group.order: "1"
+    
+    # gRPC specific annotations
+    alb.ingress.kubernetes.io/backend-protocol: GRPC
+    alb.ingress.kubernetes.io/backend-protocol-version: GRPC
+    nginx.ingress.kubernetes.io/grpc-backend: "true"
+    
+    # SSL Configuration for gRPC
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-west-2:123456789012:certificate/grpc-12345678-1234-1234-1234-123456789012"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
+    
+    # Health Check for gRPC
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-port: "8088"
+spec:
+  ingressClassName: alb
+  tls:
+    - hosts:
+        - grpc.tsiot.com
+      secretName: tsiot-grpc-tls-secret
+  rules:
+    - host: grpc.tsiot.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tsiot-server-internal
+                port:
+                  number: 9090
+
+---
+# Network Policy for ingress traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tsiot-ingress-policy
+  namespace: tsiot
+  labels:
+    app.kubernetes.io/name: tsiot-ingress
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: tsiot-server
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic from ALB/NLB
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 8088
+    # Allow traffic from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: tsiot-monitoring
+      ports:
+        - protocol: TCP
+          port: 9091
+    # Allow internal cluster traffic
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: tsiot
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+  egress:
+    # Allow all outbound traffic (can be restricted based on requirements)
+    - {}
+
+---
+# TLS Secret placeholder (should be managed by cert-manager or external secrets)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tsiot-tls-secret
+  namespace: tsiot
+  labels:
+    app.kubernetes.io/name: tsiot-tls
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: tls
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/common-name: "api.tsiot.com"
+    cert-manager.io/subject-organizations: "TSIoT Inc"
+type: kubernetes.io/tls
+data:
+  # These should be managed by cert-manager or external certificate management
+  tls.crt: LS0tLS1CRUdJTi...  # Base64 encoded certificate
+  tls.key: LS0tLS1CRUdJTi...  # Base64 encoded private key
+
+---
+# Certificate resource for cert-manager
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tsiot-certificate
+  namespace: tsiot
+  labels:
+    app.kubernetes.io/name: tsiot-certificate
+    app.kubernetes.io/instance: tsiot
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: certificate
+    app.kubernetes.io/part-of: tsiot-platform
+    app.kubernetes.io/managed-by: cert-manager
+spec:
+  secretName: tsiot-tls-secret
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: api.tsiot.com
+  dnsNames:
+    - api.tsiot.com
+    - api-v1.tsiot.com
+    - grpc.tsiot.com
+  duration: 2160h # 90 days
+  renewBefore: 360h # 15 days before expiry
+  privateKey:
+    algorithm: RSA
+    size: 2048
