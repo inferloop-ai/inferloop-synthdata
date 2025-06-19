@@ -1,0 +1,154 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "structured-docs-synth"
+version = "0.1.0"
+description = "Synthetic structured document generation platform"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "InferLoop", email = "contact@inferloop.ai"}
+]
+maintainers = [
+    {name = "InferLoop", email = "contact@inferloop.ai"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "reportlab>=4.0.0",
+    "python-docx>=1.1.0",
+    "jinja2>=3.1.0",
+    "faker>=20.0.0",
+    "pandas>=2.1.0",
+    "numpy>=1.25.0",
+    "pillow>=10.1.0",
+    "pytesseract>=0.3.10",
+    "spacy>=3.7.0",
+    "cryptography>=41.0.0",
+    "python-multipart>=0.0.6",
+    "pyyaml>=6.0.0",
+    "python-dotenv>=1.0.0",
+    "click>=8.1.0",
+    "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.7.0",
+    "pre-commit>=3.6.0",
+]
+cloud = [
+    "boto3>=1.35.0",
+    "azure-storage-blob>=12.19.0",
+    "google-cloud-storage>=2.10.0",
+]
+ocr = [
+    "pytesseract>=0.3.10",
+    "opencv-python>=4.8.0",
+]
+
+[project.scripts]
+synth-doc = "structured_docs_synth.cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/inferloop-ai/inferloop-synthdata"
+Documentation = "https://github.com/inferloop-ai/inferloop-synthdata/docs"
+Repository = "https://github.com/inferloop-ai/inferloop-synthdata"
+Issues = "https://github.com/inferloop-ai/inferloop-synthdata/issues"
+
+[tool.setuptools.packages.find]
+where = ["docs/structured-documents-synthetic-data/src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml", "*.json"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = [
+    "docs/structured-documents-synthetic-data/tests",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["docs/structured-documents-synthetic-data/src"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "setup.py",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
