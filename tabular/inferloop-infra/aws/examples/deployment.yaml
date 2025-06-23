@@ -1,0 +1,510 @@
+# AWS Deployment Configuration Example
+# This file demonstrates how to deploy the Inferloop Synthetic Data Generator on AWS
+
+# Basic deployment configuration
+deployment:
+  name: inferloop-synthdata-aws
+  environment: production
+  region: us-east-1
+  
+# Compute configuration
+compute:
+  # ECS Fargate configuration
+  ecs:
+    cluster_name: inferloop-synthdata-cluster
+    service_name: synthdata-api
+    task_definition:
+      family: synthdata-task
+      cpu: "2048"        # 2 vCPU
+      memory: "4096"     # 4 GB
+      container:
+        name: synthdata
+        image: inferloop/synthdata:latest
+        port: 8000
+        environment:
+          - name: ENVIRONMENT
+            value: production
+          - name: LOG_LEVEL
+            value: INFO
+          - name: WORKERS
+            value: "4"
+        secrets:
+          - name: DATABASE_URL
+            valueFrom: arn:aws:secretsmanager:us-east-1:123456789012:secret:synthdata/db-url
+          - name: API_KEY
+            valueFrom: arn:aws:secretsmanager:us-east-1:123456789012:secret:synthdata/api-key
+    
+    # Auto-scaling configuration
+    auto_scaling:
+      min_capacity: 2
+      max_capacity: 10
+      target_cpu_utilization: 70
+      target_memory_utilization: 80
+      scale_out_cooldown: 60
+      scale_in_cooldown: 300
+  
+  # Batch processing for large jobs
+  batch:
+    compute_environment:
+      name: synthdata-batch-compute
+      type: MANAGED
+      state: ENABLED
+      compute_resources:
+        type: EC2_SPOT
+        min_vcpus: 0
+        max_vcpus: 256
+        desired_vcpus: 4
+        instance_types:
+          - optimal
+        spot_iam_fleet_role: arn:aws:iam::123456789012:role/aws-batch-spot-fleet-role
+    
+    job_queue:
+      name: synthdata-batch-queue
+      priority: 1000
+      compute_environment_order:
+        - order: 1
+          compute_environment: synthdata-batch-compute
+    
+    job_definition:
+      name: synthdata-batch-job
+      type: container
+      container_properties:
+        image: inferloop/synthdata:batch-processor
+        vcpus: 4
+        memory: 8192
+        job_role_arn: arn:aws:iam::123456789012:role/synthdata-batch-job-role
+
+# Storage configuration
+storage:
+  s3:
+    buckets:
+      - name: inferloop-synthdata-data
+        versioning: true
+        encryption: AES256
+        lifecycle_rules:
+          - id: archive-old-data
+            status: enabled
+            transitions:
+              - days: 30
+                storage_class: STANDARD_IA
+              - days: 90
+                storage_class: GLACIER
+            expiration:
+              days: 365
+      
+      - name: inferloop-synthdata-models
+        versioning: true
+        encryption: AES256
+        replication:
+          role: arn:aws:iam::123456789012:role/replication-role
+          rules:
+            - id: replicate-to-dr
+              status: enabled
+              priority: 1
+              destination:
+                bucket: arn:aws:s3:::inferloop-synthdata-models-dr
+                storage_class: STANDARD_IA
+  
+  # EFS for shared storage
+  efs:
+    file_system:
+      name: synthdata-shared
+      performance_mode: generalPurpose
+      throughput_mode: bursting
+      encrypted: true
+      mount_targets:
+        - subnet_id: subnet-12345678
+          security_groups:
+            - sg-12345678
+
+# Database configuration
+database:
+  rds:
+    engine: postgres
+    engine_version: "14.7"
+    instance_class: db.r6g.xlarge
+    allocated_storage: 100
+    storage_encrypted: true
+    multi_az: true
+    backup_retention_period: 7
+    preferred_backup_window: "03:00-04:00"
+    preferred_maintenance_window: "sun:04:00-sun:05:00"
+    deletion_protection: true
+    
+    # Read replicas for scaling
+    read_replicas:
+      - identifier: synthdata-db-read-1
+        instance_class: db.r6g.large
+        availability_zone: us-east-1b
+      - identifier: synthdata-db-read-2
+        instance_class: db.r6g.large
+        availability_zone: us-east-1c
+
+# Networking configuration
+networking:
+  vpc:
+    cidr: 10.0.0.0/16
+    enable_dns_hostnames: true
+    enable_dns_support: true
+    
+  subnets:
+    public:
+      - cidr: 10.0.1.0/24
+        availability_zone: us-east-1a
+        tags:
+          Name: synthdata-public-1a
+      - cidr: 10.0.2.0/24
+        availability_zone: us-east-1b
+        tags:
+          Name: synthdata-public-1b
+      - cidr: 10.0.3.0/24
+        availability_zone: us-east-1c
+        tags:
+          Name: synthdata-public-1c
+    
+    private:
+      - cidr: 10.0.11.0/24
+        availability_zone: us-east-1a
+        tags:
+          Name: synthdata-private-1a
+      - cidr: 10.0.12.0/24
+        availability_zone: us-east-1b
+        tags:
+          Name: synthdata-private-1b
+      - cidr: 10.0.13.0/24
+        availability_zone: us-east-1c
+        tags:
+          Name: synthdata-private-1c
+  
+  # Application Load Balancer
+  alb:
+    name: synthdata-alb
+    scheme: internet-facing
+    listeners:
+      - port: 80
+        protocol: HTTP
+        default_action:
+          type: redirect
+          redirect:
+            port: 443
+            protocol: HTTPS
+            status_code: HTTP_301
+      
+      - port: 443
+        protocol: HTTPS
+        certificate_arn: arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012
+        default_action:
+          type: forward
+          target_group_arn: !Ref TargetGroup
+    
+    target_group:
+      name: synthdata-tg
+      port: 8000
+      protocol: HTTP
+      target_type: ip
+      health_check:
+        enabled: true
+        healthy_threshold: 2
+        unhealthy_threshold: 3
+        timeout: 5
+        interval: 30
+        path: /health
+        matcher: "200"
+
+  # CloudFront CDN
+  cloudfront:
+    enabled: true
+    distribution:
+      comment: Synthetic Data Generator CDN
+      price_class: PriceClass_100
+      aliases:
+        - api.synthdata.example.com
+      viewer_certificate:
+        acm_certificate_arn: arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012
+        ssl_support_method: sni-only
+        minimum_protocol_version: TLSv1.2_2021
+      
+      origins:
+        - id: alb-origin
+          domain_name: synthdata-alb-123456789.us-east-1.elb.amazonaws.com
+          custom_origin_config:
+            http_port: 80
+            https_port: 443
+            origin_protocol_policy: https-only
+            origin_ssl_protocols:
+              - TLSv1.2
+      
+      default_cache_behavior:
+        target_origin_id: alb-origin
+        viewer_protocol_policy: redirect-to-https
+        allowed_methods:
+          - GET
+          - HEAD
+          - OPTIONS
+          - PUT
+          - POST
+          - PATCH
+          - DELETE
+        cached_methods:
+          - GET
+          - HEAD
+        compress: true
+        default_ttl: 0
+        max_ttl: 0
+        min_ttl: 0
+        forwarded_values:
+          query_string: true
+          cookies:
+            forward: all
+          headers:
+            - "*"
+
+# Security configuration
+security:
+  # IAM roles and policies
+  iam:
+    roles:
+      - name: synthdata-ecs-task-role
+        assume_role_policy:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: ecs-tasks.amazonaws.com
+              Action: sts:AssumeRole
+        policies:
+          - name: synthdata-s3-access
+            policy:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - s3:GetObject
+                    - s3:PutObject
+                    - s3:DeleteObject
+                  Resource:
+                    - arn:aws:s3:::inferloop-synthdata-data/*
+                - Effect: Allow
+                  Action:
+                    - s3:ListBucket
+                  Resource:
+                    - arn:aws:s3:::inferloop-synthdata-data
+  
+  # Security groups
+  security_groups:
+    - name: synthdata-alb-sg
+      description: Security group for ALB
+      ingress_rules:
+        - protocol: tcp
+          from_port: 80
+          to_port: 80
+          cidr_blocks:
+            - 0.0.0.0/0
+        - protocol: tcp
+          from_port: 443
+          to_port: 443
+          cidr_blocks:
+            - 0.0.0.0/0
+      
+    - name: synthdata-app-sg
+      description: Security group for application
+      ingress_rules:
+        - protocol: tcp
+          from_port: 8000
+          to_port: 8000
+          source_security_group_id: !Ref ALBSecurityGroup
+  
+  # KMS encryption
+  kms:
+    key:
+      description: Synthetic Data Encryption Key
+      key_policy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: arn:aws:iam::123456789012:root
+            Action: kms:*
+            Resource: "*"
+  
+  # Secrets Manager
+  secrets:
+    - name: synthdata/db-url
+      description: Database connection URL
+      rotation_rules:
+        automatically_after_days: 90
+    
+    - name: synthdata/api-key
+      description: API authentication key
+      rotation_rules:
+        automatically_after_days: 30
+  
+  # WAF rules
+  waf:
+    web_acl:
+      name: synthdata-waf
+      default_action:
+        type: ALLOW
+      rules:
+        - name: RateLimitRule
+          priority: 1
+          statement:
+            rate_based_statement:
+              limit: 2000
+              aggregate_key_type: IP
+          action:
+            type: BLOCK
+        
+        - name: SQLiRule
+          priority: 2
+          statement:
+            managed_rule_group_statement:
+              vendor_name: AWS
+              name: AWSManagedRulesSQLiRuleSet
+          action:
+            type: BLOCK
+
+# Monitoring configuration
+monitoring:
+  cloudwatch:
+    # Log groups
+    log_groups:
+      - name: /ecs/synthdata
+        retention_in_days: 7
+      - name: /aws/lambda/synthdata
+        retention_in_days: 7
+      - name: /aws/rds/instance/synthdata
+        retention_in_days: 30
+    
+    # Alarms
+    alarms:
+      - name: synthdata-high-cpu
+        metric_name: CPUUtilization
+        namespace: AWS/ECS
+        statistic: Average
+        period: 300
+        evaluation_periods: 2
+        threshold: 80
+        comparison_operator: GreaterThanThreshold
+        alarm_actions:
+          - !Ref SNSTopic
+      
+      - name: synthdata-api-errors
+        metric_name: 5XXError
+        namespace: AWS/ApplicationELB
+        statistic: Sum
+        period: 60
+        evaluation_periods: 1
+        threshold: 10
+        comparison_operator: GreaterThanThreshold
+        alarm_actions:
+          - !Ref SNSTopic
+    
+    # Dashboard
+    dashboard:
+      name: synthdata-dashboard
+      widgets:
+        - type: metric
+          properties:
+            metrics:
+              - - AWS/ECS
+                - CPUUtilization
+                - ServiceName
+                - synthdata-api
+                - ClusterName
+                - synthdata-cluster
+            period: 300
+            stat: Average
+            region: us-east-1
+            title: ECS CPU Utilization
+        
+        - type: metric
+          properties:
+            metrics:
+              - - AWS/ApplicationELB
+                - RequestCount
+                - LoadBalancer
+                - app/synthdata-alb/1234567890abcdef
+            period: 300
+            stat: Sum
+            region: us-east-1
+            title: Request Count
+  
+  # X-Ray tracing
+  xray:
+    sampling_rule:
+      rule_name: synthdata-sampling
+      priority: 1000
+      fixed_rate: 0.1
+      reservoir_size: 1
+      service_name: synthdata-api
+      service_type: "*"
+      host: "*"
+      http_method: "*"
+      url_path: "*"
+      version: 1
+
+# Cost optimization
+cost_optimization:
+  # Savings plans
+  savings_plans:
+    - type: compute
+      term: 1_year
+      payment_option: all_upfront
+      hourly_commitment: 10.0
+  
+  # Reserved instances
+  reserved_instances:
+    - instance_type: db.r6g.xlarge
+      instance_count: 1
+      term: 1_year
+      offering_class: standard
+  
+  # Budget alerts
+  budgets:
+    - name: synthdata-monthly-budget
+      budget_type: COST
+      limit_amount: 5000
+      limit_unit: USD
+      time_unit: MONTHLY
+      notifications:
+        - comparison_operator: GREATER_THAN
+          threshold: 80
+          threshold_type: PERCENTAGE
+          notification_type: FORECASTED
+          subscribers:
+            - address: alerts@example.com
+              subscription_type: EMAIL
+
+# Disaster recovery
+disaster_recovery:
+  # Backup configuration
+  backup:
+    backup_plan:
+      name: synthdata-backup-plan
+      rules:
+        - rule_name: daily-backups
+          target_backup_vault_name: synthdata-backup-vault
+          schedule_expression: cron(0 5 ? * * *)
+          start_window_minutes: 60
+          completion_window_minutes: 120
+          lifecycle:
+            delete_after_days: 30
+            move_to_cold_storage_after_days: 7
+      
+      resources:
+        - arn:aws:rds:us-east-1:123456789012:db:synthdata-db
+        - arn:aws:efs:us-east-1:123456789012:file-system/fs-12345678
+  
+  # Cross-region replication
+  replication:
+    target_region: us-west-2
+    resources:
+      - type: s3
+        source_bucket: inferloop-synthdata-data
+        destination_bucket: inferloop-synthdata-data-dr
+      - type: rds
+        source_db: synthdata-db
+        target_db: synthdata-db-dr
+        replication_type: read_replica
