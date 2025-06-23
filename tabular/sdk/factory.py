@@ -10,6 +10,7 @@ from .base import BaseSyntheticGenerator, SyntheticDataConfig
 from .sdv_generator import SDVGenerator
 from .ctgan_generator import CTGANGenerator
 from .ydata_generator import YDataGenerator
+from .cache import SyntheticDataCache, get_cache
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,8 @@ class GeneratorFactory:
     }
     
     @classmethod
-    def create_generator(cls, config: SyntheticDataConfig) -> BaseSyntheticGenerator:
+    def create_generator(cls, config: SyntheticDataConfig, 
+                        cache: Optional[SyntheticDataCache] = None) -> BaseSyntheticGenerator:
         """Create a generator based on configuration"""
         generator_type = config.generator_type.lower()
         
@@ -33,7 +35,15 @@ class GeneratorFactory:
             raise ValueError(f"Unknown generator type: {generator_type}. Available: {available}")
         
         generator_class = cls._generators[generator_type]
-        return generator_class(config)
+        generator = generator_class(config)
+        
+        # Attach cache if provided
+        if cache:
+            generator._cache = cache
+        elif config.model_params.get('enable_caching', False):
+            generator._cache = get_cache()
+        
+        return generator
     
     @classmethod
     def register_generator(cls, name: str, generator_class: Type[BaseSyntheticGenerator]):

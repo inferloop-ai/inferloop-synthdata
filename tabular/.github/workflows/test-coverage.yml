@@ -1,0 +1,127 @@
+name: Test Coverage
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-coverage:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, '3.10']
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt', '**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,all]"
+        pip install coverage coverage-badge pytest-cov
+    
+    - name: Run tests with coverage
+      run: |
+        python scripts/test_coverage.py --min-coverage 80
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+    
+    - name: Generate coverage badge
+      run: |
+        coverage-badge -o coverage.svg -f
+    
+    - name: Upload coverage badge
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-badge
+        path: coverage.svg
+    
+    - name: Comment PR with coverage
+      if: github.event_name == 'pull_request'
+      uses: py-cov-action/python-coverage-comment-action@v3
+      with:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        MINIMUM_GREEN: 85
+        MINIMUM_ORANGE: 70
+    
+    - name: Check coverage for changed files
+      if: github.event_name == 'pull_request'
+      run: |
+        python scripts/test_coverage.py --diff --min-coverage 80
+    
+    - name: Archive coverage reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-reports
+        path: |
+          htmlcov/
+          coverage.xml
+          coverage.json
+          coverage_summary.md
+
+  coverage-report:
+    needs: test-coverage
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Download coverage reports
+      uses: actions/download-artifact@v3
+      with:
+        name: coverage-reports
+    
+    - name: Download coverage badge
+      uses: actions/download-artifact@v3
+      with:
+        name: coverage-badge
+    
+    - name: Deploy coverage report to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./htmlcov
+        destination_dir: coverage
+    
+    - name: Update README with coverage badge
+      run: |
+        # Update coverage badge in README if it exists
+        if [ -f README.md ]; then
+          # Check if badge already exists
+          if grep -q "coverage.svg" README.md; then
+            echo "Coverage badge already in README"
+          else
+            # Add badge after first heading
+            sed -i '0,/^#/{s/^#\(.*\)/# \1\n\n![Coverage](coverage.svg)/}' README.md
+          fi
+        fi
+    
+    - name: Commit coverage badge
+      uses: EndBug/add-and-commit@v9
+      with:
+        add: 'coverage.svg README.md'
+        message: 'Update coverage badge'
+        default_author: github_actions

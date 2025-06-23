@@ -178,42 +178,76 @@ class SyntheticDataValidator:
         }
     
     def validate_privacy(self) -> Dict[str, Any]:
-        """Validate privacy preservation (basic distance-based metrics)"""
+        """Validate privacy preservation with comprehensive metrics"""
         logger.info("Validating privacy preservation...")
         
-        # Calculate minimum distance from synthetic to real data points
-        # This is a simplified privacy metric
-        
-        numerical_cols = self.real_data.select_dtypes(include=[np.number]).columns
-        
-        if len(numerical_cols) == 0:
-            return {'score': 1.0, 'message': 'No numerical columns for privacy analysis'}
-        
-        real_numeric = self.real_data[numerical_cols].values
-        synthetic_numeric = self.synthetic_data[numerical_cols].values
-        
-        # Normalize data
-        from sklearn.preprocessing import StandardScaler
-        scaler = StandardScaler()
-        real_scaled = scaler.fit_transform(real_numeric)
-        synthetic_scaled = scaler.transform(synthetic_numeric)
-        
-        # Calculate minimum distances
-        min_distances = []
-        for synth_point in synthetic_scaled:
-            distances = np.linalg.norm(real_scaled - synth_point, axis=1)
-            min_distances.append(np.min(distances))
-        
-        avg_min_distance = np.mean(min_distances)
-        
-        # Score based on average minimum distance (higher is better for privacy)
-        privacy_score = min(1.0, avg_min_distance / 2.0)  # Normalize to [0,1]
-        
-        return {
-            'score': privacy_score,
-            'average_minimum_distance': avg_min_distance,
-            'minimum_distances': min_distances
-        }
+        # Import privacy evaluator
+        try:
+            from .privacy import PrivacyEvaluator
+            
+            # Create privacy evaluator
+            privacy_evaluator = PrivacyEvaluator()
+            
+            # Evaluate privacy
+            privacy_metrics = privacy_evaluator.evaluate_privacy(
+                self.real_data,
+                self.synthetic_data
+            )
+            
+            # Generate privacy report
+            privacy_report = privacy_evaluator.generate_privacy_report(
+                self.real_data,
+                self.synthetic_data
+            )
+            
+            return {
+                'score': privacy_metrics.privacy_score,
+                'epsilon': privacy_metrics.epsilon,
+                'delta': privacy_metrics.delta,
+                'k_anonymity': privacy_metrics.k_anonymity,
+                'l_diversity': privacy_metrics.l_diversity,
+                't_closeness': privacy_metrics.t_closeness,
+                'membership_disclosure_risk': privacy_metrics.membership_disclosure_risk,
+                'attribute_disclosure_risk': privacy_metrics.attribute_disclosure_risk,
+                'detailed_report': privacy_report,
+                'metrics': privacy_metrics.to_dict()
+            }
+            
+        except ImportError:
+            logger.warning("Privacy module not available, using basic metrics")
+            
+            # Fallback to basic distance-based metrics
+            numerical_cols = self.real_data.select_dtypes(include=[np.number]).columns
+            
+            if len(numerical_cols) == 0:
+                return {'score': 1.0, 'message': 'No numerical columns for privacy analysis'}
+            
+            real_numeric = self.real_data[numerical_cols].values
+            synthetic_numeric = self.synthetic_data[numerical_cols].values
+            
+            # Normalize data
+            from sklearn.preprocessing import StandardScaler
+            scaler = StandardScaler()
+            real_scaled = scaler.fit_transform(real_numeric)
+            synthetic_scaled = scaler.transform(synthetic_numeric)
+            
+            # Calculate minimum distances
+            min_distances = []
+            for synth_point in synthetic_scaled:
+                distances = np.linalg.norm(real_scaled - synth_point, axis=1)
+                min_distances.append(np.min(distances))
+            
+            avg_min_distance = np.mean(min_distances)
+            
+            # Score based on average minimum distance (higher is better for privacy)
+            privacy_score = min(1.0, avg_min_distance / 2.0)  # Normalize to [0,1]
+            
+            return {
+                'score': privacy_score,
+                'average_minimum_distance': avg_min_distance,
+                'minimum_distances': min_distances,
+                'message': 'Using basic privacy metrics'
+            }
     
     def validate_utility(self) -> Dict[str, Any]:
         """Validate utility through machine learning task performance"""

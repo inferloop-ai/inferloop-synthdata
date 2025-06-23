@@ -13,7 +13,19 @@ from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from ..sdk import GeneratorFactory, SyntheticDataConfig, SyntheticDataValidator
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from sdk import GeneratorFactory, SyntheticDataConfig, SyntheticDataValidator
+from cli.commands import streaming as streaming_commands
+from cli.commands import profile as profile_commands
+from cli.commands import cache as cache_commands
+from cli.commands import batch as batch_commands
+from cli.commands import versioning as versioning_commands
+from cli.commands import benchmark as benchmark_commands
+from cli.commands import privacy as privacy_commands
+from cli.commands import deploy as deploy_commands
 
 app = typer.Typer(
     name="inferloop-synthetic",
@@ -21,6 +33,23 @@ app = typer.Typer(
     no_args_is_help=True
 )
 console = Console()
+
+# Add streaming commands
+app.add_typer(streaming_commands.app, name="streaming", help="Streaming operations for large datasets")
+# Add profiling commands
+app.add_typer(profile_commands.app, name="profile", help="Data profiling and analysis")
+# Add cache commands
+app.add_typer(cache_commands.app, name="cache", help="Cache management")
+# Add batch commands
+app.add_typer(batch_commands.app, name="batch", help="Batch processing for multiple datasets")
+# Add versioning commands
+app.add_typer(versioning_commands.app, name="version", help="Model versioning and rollback")
+# Add benchmark commands
+app.add_typer(benchmark_commands.app, name="benchmark", help="Performance benchmarking")
+# Add privacy commands
+app.add_typer(privacy_commands.app, name="privacy", help="Privacy evaluation and metrics")
+# Add deployment commands
+app.add_typer(deploy_commands.app, name="deploy", help="Multi-cloud deployment and management")
 
 
 @app.command()

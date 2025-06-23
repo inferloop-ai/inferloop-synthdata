@@ -20,6 +20,9 @@ try:
 except ImportError:
     YDATA_AVAILABLE = False
     logger.warning("YData Synthetic not available. Install with: pip install ydata-synthetic")
+    # Define dummy classes to avoid NameError
+    RegularSynthesizer = None
+    ModelParameters = None
 
 
 class YDataGenerator(BaseSyntheticGenerator):

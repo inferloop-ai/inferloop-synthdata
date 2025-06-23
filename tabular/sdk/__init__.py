@@ -13,6 +13,27 @@ from .ctgan_generator import CTGANGenerator
 from .ydata_generator import YDataGenerator
 from .validator import SyntheticDataValidator
 from .factory import GeneratorFactory
+from .streaming import (
+    StreamingDataProcessor,
+    StreamingSyntheticGenerator,
+    StreamingValidator,
+    create_streaming_generator
+)
+from .profiler import (
+    DataProfiler,
+    DatasetProfile,
+    ColumnProfile
+)
+from .cache import (
+    SyntheticDataCache,
+    FileSystemCache,
+    MemoryCache,
+    CacheEntry,
+    get_cache,
+    set_cache,
+    cached_generation,
+    cached_model_training
+)
 
 __all__ = [
     "BaseSyntheticGenerator",
@@ -22,7 +43,22 @@ __all__ = [
     "CTGANGenerator", 
     "YDataGenerator",
     "SyntheticDataValidator",
-    "GeneratorFactory"
+    "GeneratorFactory",
+    "StreamingDataProcessor",
+    "StreamingSyntheticGenerator",
+    "StreamingValidator",
+    "create_streaming_generator",
+    "DataProfiler",
+    "DatasetProfile",
+    "ColumnProfile",
+    "SyntheticDataCache",
+    "FileSystemCache",
+    "MemoryCache",
+    "CacheEntry",
+    "get_cache",
+    "set_cache",
+    "cached_generation",
+    "cached_model_training"
 ]
 
 

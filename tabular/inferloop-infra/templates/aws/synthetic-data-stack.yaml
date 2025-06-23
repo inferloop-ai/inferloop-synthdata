@@ -1,0 +1,174 @@
+name: synthetic-data-stack
+version: "1.0.0"
+description: AWS deployment stack for Inferloop Synthetic Data Generation
+provider: aws
+
+variables:
+  - name: environment
+    description: Deployment environment (dev, staging, prod)
+    type: string
+    default: dev
+    choices: [dev, staging, prod]
+    
+  - name: instance_type
+    description: EC2 instance type for API servers
+    type: string
+    default: t3.medium
+    
+  - name: min_instances
+    description: Minimum number of instances in auto-scaling group
+    type: number
+    default: 2
+    
+  - name: max_instances
+    description: Maximum number of instances in auto-scaling group
+    type: number
+    default: 10
+    
+  - name: database_instance_class
+    description: RDS instance class for metadata storage
+    type: string
+    default: db.t3.micro
+    
+  - name: enable_monitoring
+    description: Enable CloudWatch monitoring
+    type: boolean
+    default: true
+
+resources:
+  vpc:
+    type: network
+    config:
+      name: "{{ environment }}-synthetic-vpc"
+      cidr_block: "10.0.0.0/16"
+      enable_dns: true
+      availability_zones: ["us-east-1a", "us-east-1b"]
+      nat_gateway: true
+      tags:
+        Environment: "{{ environment }}"
+        ManagedBy: "inferloop"
+  
+  security_group:
+    type: firewall
+    config:
+      name: "{{ environment }}-synthetic-sg"
+      vpc_id: "{{ vpc.id }}"
+      ingress_rules:
+        - protocol: tcp
+          from_port: 443
+          to_port: 443
+          source: "0.0.0.0/0"
+          description: "HTTPS traffic"
+        - protocol: tcp
+          from_port: 80
+          to_port: 80
+          source: "0.0.0.0/0"
+          description: "HTTP traffic"
+      egress_rules:
+        - protocol: all
+          from_port: 0
+          to_port: 65535
+          source: "0.0.0.0/0"
+          description: "All outbound traffic"
+  
+  app_servers:
+    type: container
+    config:
+      name: "{{ environment }}-synthetic-app"
+      image: "inferloop/synthetic-data:latest"
+      cpu: 1024
+      memory: 2048
+      port: 8000
+      environment:
+        ENVIRONMENT: "{{ environment }}"
+        DATABASE_URL: "{{ database.endpoint }}"
+        REDIS_URL: "{{ cache.endpoint }}"
+      min_instances: "{{ min_instances }}"
+      max_instances: "{{ max_instances }}"
+      health_check:
+        path: "/health"
+        interval: 30
+        timeout: 5
+  
+  load_balancer:
+    type: loadbalancer
+    config:
+      name: "{{ environment }}-synthetic-alb"
+      type: application
+      subnets: "{{ vpc.public_subnets }}"
+      security_groups: ["{{ security_group.id }}"]
+      target_groups:
+        - name: "{{ environment }}-synthetic-tg"
+          protocol: HTTP
+          port: 8000
+          health_check:
+            path: "/health"
+            interval: 30
+            healthy_threshold: 2
+      listeners:
+        - protocol: HTTPS
+          port: 443
+          certificate_arn: "{{ certificate.arn }}"
+          default_action:
+            type: forward
+            target_group: "{{ environment }}-synthetic-tg"
+  
+  database:
+    type: database
+    config:
+      name: "{{ environment }}-synthetic-db"
+      engine: postgresql
+      engine_version: "13.7"
+      instance_class: "{{ database_instance_class }}"
+      storage_size_gb: 20
+      username: "inferloop"
+      password: "{{ database_password }}"
+      vpc_id: "{{ vpc.id }}"
+      multi_az: "{{ environment == 'prod' }}"
+      backup_retention_days: 7
+      encryption_enabled: true
+  
+  cache:
+    type: cache
+    config:
+      name: "{{ environment }}-synthetic-cache"
+      engine: redis
+      engine_version: "7.0"
+      node_type: "cache.t3.micro"
+      num_nodes: 1
+      subnet_group: "{{ vpc.cache_subnet_group }}"
+      security_groups: ["{{ security_group.id }}"]
+  
+  storage:
+    type: storage
+    config:
+      name: "{{ environment }}-synthetic-data"
+      storage_type: object
+      encryption: true
+      versioning: true
+      lifecycle_rules:
+        - id: "archive-old-data"
+          status: enabled
+          transitions:
+            - days: 30
+              storage_class: STANDARD_IA
+            - days: 90
+              storage_class: GLACIER
+      cors_rules:
+        - allowed_origins: ["*"]
+          allowed_methods: ["GET", "PUT", "POST"]
+          allowed_headers: ["*"]
+          max_age_seconds: 3600
+
+outputs:
+  api_endpoint:
+    value: "https://{{ load_balancer.dns_name }}"
+    description: "API endpoint URL"
+  
+  storage_bucket:
+    value: "{{ storage.bucket_name }}"
+    description: "S3 bucket for synthetic data storage"
+  
+  database_endpoint:
+    value: "{{ database.endpoint }}"
+    description: "Database connection endpoint"

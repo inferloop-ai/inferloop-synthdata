@@ -17,13 +17,26 @@ import tempfile
 import asyncio
 from datetime import datetime
 
-from ..sdk import GeneratorFactory, SyntheticDataConfig, SyntheticDataValidator, GenerationResult
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from sdk import GeneratorFactory, SyntheticDataConfig, SyntheticDataValidator, GenerationResult
+from api.middleware import RateLimiter, LoggingMiddleware, SecurityMiddleware, ErrorTracker
+from api.auth.auth_handler import AuthHandler
+from api.endpoints import streaming, profiling, cache, batch, versioning, benchmark, privacy
 
 app = FastAPI(
     title="Inferloop Synthetic Data API",
     description="REST API for synthetic data generation using multiple libraries",
     version="0.1.0"
 )
+
+# Add middleware
+app.add_middleware(ErrorTracker)
+app.add_middleware(SecurityMiddleware)
+app.add_middleware(RateLimiter)
+app.add_middleware(LoggingMiddleware)
 
 # CORS middleware
 app.add_middleware(
@@ -33,6 +46,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(streaming.router)
+app.include_router(profiling.router)
+app.include_router(cache.router)
+app.include_router(batch.router)
+app.include_router(versioning.router)
+app.include_router(benchmark.router)
+app.include_router(privacy.router)
 
 # In-memory storage for jobs (in production, use Redis or database)
 jobs_storage = {}

@@ -1,0 +1,28 @@
+[run]
+source = .
+omit = 
+    */tests/*
+    */test_*
+    */__pycache__/*
+    */venv/*
+    */env/*
+    */.tox/*
+    */setup.py
+    */docs/*
+    */examples/*
+
+[report]
+precision = 2
+show_missing = True
+skip_covered = False
+sort = Cover
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml
+
+[json]
+output = coverage.json
+pretty_print = True

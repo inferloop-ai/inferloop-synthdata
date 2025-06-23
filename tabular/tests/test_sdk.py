@@ -8,7 +8,11 @@ import pandas as pd
 import numpy as np
 from unittest.mock import Mock, patch
 
-from inferloop_synthetic.sdk import (
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from sdk import (
     SyntheticDataConfig,
     GeneratorFactory,
     SyntheticDataValidator,
@@ -81,7 +85,7 @@ class TestGeneratorFactory:
     
     def test_create_generator(self, basic_config):
         """Test generator creation"""
-        with patch('inferloop_synthetic.sdk.sdv_generator.SDV_AVAILABLE', True):
+        with patch('sdk.sdv_generator.SDV_AVAILABLE', True):
             generator = GeneratorFactory.create_generator(basic_config)
             assert generator is not None
             assert generator.config == basic_config
@@ -104,7 +108,7 @@ class TestGeneratorFactory:
             'num_samples': 500
         }
         
-        with patch('inferloop_synthetic.sdk.sdv_generator.SDV_AVAILABLE', True):
+        with patch('sdk.sdv_generator.SDV_AVAILABLE', True):
             generator = GeneratorFactory.create_from_dict(config_dict)
             assert generator.config.generator_type == 'sdv'
             assert generator.config.num_samples == 500
@@ -223,14 +227,20 @@ class TestGenerationResult:
 class TestIntegration:
     """Integration tests"""
     
-    @patch('inferloop_synthetic.sdk.sdv_generator.SDV_AVAILABLE', True)
-    @patch('inferloop_synthetic.sdk.sdv_generator.GaussianCopulaSynthesizer')
-    def test_end_to_end_workflow(self, mock_synthesizer, sample_data):
+    @patch('sdk.sdv_generator.SDV_AVAILABLE', True)
+    @patch('sdk.sdv_generator.SingleTableMetadata')
+    @patch('sdk.sdv_generator.GaussianCopulaSynthesizer')
+    def test_end_to_end_workflow(self, mock_synthesizer, mock_metadata_class, sample_data):
         """Test complete end-to-end workflow"""
         # Mock the SDV synthesizer
         mock_synth_instance = Mock()
         mock_synth_instance.sample.return_value = sample_data.head(50)
         mock_synthesizer.return_value = mock_synth_instance
+        
+        # Mock metadata
+        mock_metadata = Mock()
+        mock_metadata.to_dict.return_value = {}
+        mock_metadata_class.return_value = mock_metadata
         
         # Create configuration
         config = SyntheticDataConfig(

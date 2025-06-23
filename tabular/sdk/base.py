@@ -5,12 +5,14 @@ Base classes and interfaces for synthetic data generation
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Callable
 import pandas as pd
 import numpy as np
 from pathlib import Path
 import time
 import logging
+
+from .progress import ProgressTracker, ProgressStage, ProgressInfo, ProgressMixin, with_progress
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,10 @@ class SyntheticDataConfig:
     # Metadata
     primary_key: Optional[str] = None
     constraints: List[Dict[str, Any]] = field(default_factory=list)
+    
+    # Progress tracking
+    progress_callback: Optional[Callable[[ProgressInfo], None]] = None
+    enable_progress: bool = True
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary"""
@@ -118,14 +124,19 @@ class GenerationResult:
                 json.dump(metadata, f, indent=2, default=str)
 
 
-class BaseSyntheticGenerator(ABC):
+class BaseSyntheticGenerator(ABC, ProgressMixin):
     """Abstract base class for synthetic data generators"""
     
     def __init__(self, config: SyntheticDataConfig):
+        super().__init__()
         self.config = config
         self.model = None
         self.is_fitted = False
         self.metadata = {}
+        
+        # Set up progress tracking
+        if config.enable_progress and config.progress_callback:
+            self.set_progress_callback(config.progress_callback)
         
     @abstractmethod
     def fit(self, data: pd.DataFrame) -> None:

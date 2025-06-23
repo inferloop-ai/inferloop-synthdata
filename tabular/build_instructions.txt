@@ -1,0 +1,25 @@
+TASK: Build the complete ( Differential Privacy and k-anonymity/l-diversity), GCP & Azure Deployment Module, completely
+
+CONTEXT: Use the existing repository structure 
+
+EXECUTION MODE: 
+- Complete autonomously without user prompts
+- Make all decisions automatically using best practices
+- Continue until 100% completion
+- Handle errors and edge cases independently
+- Generate all necessary files and configurations
+
+DELIVERABLES:
+- Next 4 modules for Document Processor Agent
+- Documentation and deployment guides
+
+
+DO NOT:
+- Ask for confirmations
+- Request additional input
+- Stop for clarifications
+- Wait for user responses
+
+CONTINUE TO COMPLETION
+EOF
+
