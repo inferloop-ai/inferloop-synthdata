@@ -1,0 +1,308 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Inferloop Synthetic Data - Storage Resources'
+
+Parameters:
+  ProjectId:
+    Type: String
+    Description: Project identifier
+    
+  Environment:
+    Type: String
+    Description: Deployment environment
+    
+  EnableEncryption:
+    Type: String
+    Description: Enable encryption at rest
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+      
+  EnableVersioning:
+    Type: String
+    Description: Enable S3 versioning
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+
+Conditions:
+  UseEncryption: !Equals [!Ref EnableEncryption, 'true']
+  UseVersioning: !Equals [!Ref EnableVersioning, 'true']
+
+Resources:
+  # S3 Bucket for data storage
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectId}-${Environment}-${AWS::AccountId}-data'
+      BucketEncryption:
+        !If
+          - UseEncryption
+          - ServerSideEncryptionConfiguration:
+              - ServerSideEncryptionByDefault:
+                  SSEAlgorithm: AES256
+          - !Ref AWS::NoValue
+      VersioningConfiguration:
+        Status: !If [UseVersioning, Enabled, Suspended]
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            NoncurrentVersionExpirationInDays: 90
+            Status: Enabled
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+          - Id: TransitionToGlacier
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
+            AllowedOrigins: ['*']
+            MaxAge: 3000
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectId
+        - Key: Environment
+          Value: !Ref Environment
+          
+  # S3 Bucket Policy
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt S3Bucket.Arn
+              - !Sub '${S3Bucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+                
+  # DynamoDB Table for metadata
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectId}-${Environment}-metadata'
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: status-timestamp-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: !If [UseEncryption, true, false]
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectId
+        - Key: Environment
+          Value: !Ref Environment
+          
+  # EFS File System for shared storage
+  EfsFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: !If [UseEncryption, true, false]
+      LifecyclePolicies:
+        - TransitionToIA: AFTER_30_DAYS
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub '${ProjectId}-${Environment}-efs'
+        - Key: Project
+          Value: !Ref ProjectId
+        - Key: Environment
+          Value: !Ref Environment
+          
+  # RDS Database Instance
+  RDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub '${ProjectId}-${Environment}-db-subnet-group'
+      DBSubnetGroupDescription: Subnet group for RDS database
+      SubnetIds:
+        - !ImportValue 
+          Fn::Sub: '${AWS::StackName}-PrivateSubnet1'
+        - !ImportValue
+          Fn::Sub: '${AWS::StackName}-PrivateSubnet2'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectId
+        - Key: Environment
+          Value: !Ref Environment
+          
+  RDSDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectId}-${Environment}-db'
+      DBInstanceClass: db.t3.medium
+      Engine: postgres
+      EngineVersion: '13.7'
+      MasterUsername: synthdata
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${ProjectId}/${Environment}/db-password}}'
+      AllocatedStorage: 100
+      StorageType: gp3
+      StorageEncrypted: !If [UseEncryption, true, false]
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      MultiAZ: !If [UseEncryption, true, false]  # Production gets Multi-AZ
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      EnableCloudwatchLogsExports:
+        - postgresql
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectId
+        - Key: Environment
+          Value: !Ref Environment
+          
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectId}-${Environment}-rds-sg'
+      GroupDescription: Security group for RDS database
+      VpcId: !ImportValue
+        Fn::Sub: '${AWS::StackName}-VpcId'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !ImportValue
+            Fn::Sub: '${AWS::StackName}-ApplicationSecurityGroupId'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectId}-${Environment}-rds-sg'
+          
+  # ElastiCache Redis Cluster
+  ElastiCacheSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      CacheSubnetGroupName: !Sub '${ProjectId}-${Environment}-cache-subnet-group'
+      Description: Subnet group for ElastiCache
+      SubnetIds:
+        - !ImportValue
+          Fn::Sub: '${AWS::StackName}-PrivateSubnet1'
+        - !ImportValue
+          Fn::Sub: '${AWS::StackName}-PrivateSubnet2'
+          
+  ElastiCacheCluster:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      CacheClusterId: !Sub '${ProjectId}-${Environment}-cache'
+      Engine: redis
+      CacheNodeType: cache.t3.micro
+      NumCacheNodes: 1
+      CacheSubnetGroupName: !Ref ElastiCacheSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref ElastiCacheSecurityGroup
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectId
+        - Key: Environment
+          Value: !Ref Environment
+          
+  ElastiCacheSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectId}-${Environment}-cache-sg'
+      GroupDescription: Security group for ElastiCache
+      VpcId: !ImportValue
+        Fn::Sub: '${AWS::StackName}-VpcId'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !ImportValue
+            Fn::Sub: '${AWS::StackName}-ApplicationSecurityGroupId'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectId}-${Environment}-cache-sg'
+
+Outputs:
+  S3BucketName:
+    Description: S3 bucket name
+    Value: !Ref S3Bucket
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketName'
+      
+  S3BucketArn:
+    Description: S3 bucket ARN
+    Value: !GetAtt S3Bucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketArn'
+      
+  DynamoDBTableName:
+    Description: DynamoDB table name
+    Value: !Ref DynamoDBTable
+    Export:
+      Name: !Sub '${AWS::StackName}-DynamoDBTableName'
+      
+  DynamoDBTableArn:
+    Description: DynamoDB table ARN
+    Value: !GetAtt DynamoDBTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DynamoDBTableArn'
+      
+  DynamoDBStreamArn:
+    Description: DynamoDB stream ARN
+    Value: !GetAtt DynamoDBTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-DynamoDBStreamArn'
+      
+  EfsFileSystemId:
+    Description: EFS file system ID
+    Value: !Ref EfsFileSystem
+    Export:
+      Name: !Sub '${AWS::StackName}-EfsFileSystemId'
+      
+  RDSEndpoint:
+    Description: RDS database endpoint
+    Value: !GetAtt RDSDatabase.Endpoint.Address
+    Export:
+      Name: !Sub '${AWS::StackName}-RDSEndpoint'
+      
+  ElastiCacheEndpoint:
+    Description: ElastiCache endpoint
+    Value: !GetAtt ElastiCacheCluster.RedisEndpoint.Address
+    Export:
+      Name: !Sub '${AWS::StackName}-ElastiCacheEndpoint'

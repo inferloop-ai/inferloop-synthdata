@@ -1,0 +1,188 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Inferloop Synthetic Data - Main AWS Infrastructure Stack'
+
+Parameters:
+  ProjectId:
+    Type: String
+    Description: Project identifier
+    Default: inferloop-synthdata
+    
+  Environment:
+    Type: String
+    Description: Deployment environment
+    Default: production
+    AllowedValues:
+      - development
+      - staging
+      - production
+      
+  InstanceType:
+    Type: String
+    Description: EC2 instance type
+    Default: t3.medium
+    
+  MinInstances:
+    Type: Number
+    Description: Minimum number of instances
+    Default: 1
+    
+  MaxInstances:
+    Type: Number
+    Description: Maximum number of instances
+    Default: 5
+    
+  DesiredCapacity:
+    Type: Number
+    Description: Desired number of instances
+    Default: 2
+    
+  ContainerImage:
+    Type: String
+    Description: Docker image for the application
+    Default: inferloop/synthdata:latest
+    
+  DiskSize:
+    Type: Number
+    Description: EBS volume size in GB
+    Default: 100
+    
+  EnableMonitoring:
+    Type: String
+    Description: Enable enhanced monitoring
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      AMI: ami-0ff8a91507f77f867
+    us-west-2:
+      AMI: ami-0bdb828fd58c52235
+    eu-west-1:
+      AMI: ami-047bb4163c506cd98
+    eu-central-1:
+      AMI: ami-0233214e13e500f77
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, production]
+  EnableEnhancedMonitoring: !Equals [!Ref EnableMonitoring, 'true']
+
+Resources:
+  # Networking Stack
+  NetworkingStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./networking-stack.yaml
+      Parameters:
+        ProjectId: !Ref ProjectId
+        Environment: !Ref Environment
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectId
+        - Key: Environment
+          Value: !Ref Environment
+          
+  # Security Stack
+  SecurityStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./security-stack.yaml
+      Parameters:
+        ProjectId: !Ref ProjectId
+        Environment: !Ref Environment
+        VpcId: !GetAtt NetworkingStack.Outputs.VpcId
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectId
+        - Key: Environment
+          Value: !Ref Environment
+          
+  # Storage Stack
+  StorageStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./storage-stack.yaml
+      Parameters:
+        ProjectId: !Ref ProjectId
+        Environment: !Ref Environment
+        EnableEncryption: !If [IsProduction, 'true', 'false']
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectId
+        - Key: Environment
+          Value: !Ref Environment
+          
+  # Compute Stack
+  ComputeStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./compute-stack.yaml
+      Parameters:
+        ProjectId: !Ref ProjectId
+        Environment: !Ref Environment
+        VpcId: !GetAtt NetworkingStack.Outputs.VpcId
+        SubnetIds: !GetAtt NetworkingStack.Outputs.PrivateSubnetIds
+        SecurityGroupId: !GetAtt SecurityStack.Outputs.ApplicationSecurityGroupId
+        InstanceType: !Ref InstanceType
+        MinInstances: !Ref MinInstances
+        MaxInstances: !Ref MaxInstances
+        DesiredCapacity: !Ref DesiredCapacity
+        ContainerImage: !Ref ContainerImage
+        DiskSize: !Ref DiskSize
+        IamRole: !GetAtt SecurityStack.Outputs.InstanceRole
+        S3BucketName: !GetAtt StorageStack.Outputs.S3BucketName
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectId
+        - Key: Environment
+          Value: !Ref Environment
+          
+  # Monitoring Stack
+  MonitoringStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: EnableEnhancedMonitoring
+    Properties:
+      TemplateURL: ./monitoring-stack.yaml
+      Parameters:
+        ProjectId: !Ref ProjectId
+        Environment: !Ref Environment
+        AutoScalingGroupName: !GetAtt ComputeStack.Outputs.AutoScalingGroupName
+        LoadBalancerName: !GetAtt NetworkingStack.Outputs.LoadBalancerName
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectId
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !GetAtt NetworkingStack.Outputs.VpcId
+    Export:
+      Name: !Sub '${AWS::StackName}-VpcId'
+      
+  LoadBalancerDNS:
+    Description: Load Balancer DNS name
+    Value: !GetAtt NetworkingStack.Outputs.LoadBalancerDNS
+    Export:
+      Name: !Sub '${AWS::StackName}-LoadBalancerDNS'
+      
+  S3BucketName:
+    Description: S3 bucket name
+    Value: !GetAtt StorageStack.Outputs.S3BucketName
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketName'
+      
+  AutoScalingGroupName:
+    Description: Auto Scaling Group name
+    Value: !GetAtt ComputeStack.Outputs.AutoScalingGroupName
+    Export:
+      Name: !Sub '${AWS::StackName}-AutoScalingGroupName'
+      
+  ApplicationURL:
+    Description: Application URL
+    Value: !Sub 'http://${NetworkingStack.Outputs.LoadBalancerDNS}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApplicationURL'

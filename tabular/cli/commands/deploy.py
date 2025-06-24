@@ -12,6 +12,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from deploy.gcp.cli import app as gcp_app
 from deploy.azure.cli import app as azure_app
+from deploy.aws.cli import aws_cli
+from deploy.onprem.cli import onprem_cli
 from deploy.base import DeploymentConfig
 
 app = typer.Typer(name="deploy", help="Multi-cloud deployment commands")
@@ -20,6 +22,8 @@ console = Console()
 # Add cloud provider sub-commands
 app.add_typer(gcp_app, name="gcp", help="Google Cloud Platform deployment")
 app.add_typer(azure_app, name="azure", help="Microsoft Azure deployment")
+app.add_typer(aws_cli, name="aws", help="Amazon Web Services deployment")
+app.add_typer(onprem_cli, name="onprem", help="On-premises Kubernetes deployment")
 
 
 @app.command()
@@ -76,15 +80,15 @@ def list_providers():
     
     providers_table.add_row(
         "Amazon Web Services",
-        "🚧 Coming Soon",
-        "ECS, EKS, Lambda, RDS",
+        "✅ Available",
+        "ECS, EKS, Lambda, RDS, DynamoDB",
         "deploy aws"
     )
     
     providers_table.add_row(
         "On-Premises",
-        "🚧 Planned",
-        "Kubernetes, Docker Swarm, OpenShift",
+        "✅ Available",
+        "Kubernetes, MinIO, PostgreSQL, Prometheus",
         "deploy onprem"
     )
     

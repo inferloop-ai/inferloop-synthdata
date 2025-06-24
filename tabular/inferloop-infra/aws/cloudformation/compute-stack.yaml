@@ -1,0 +1,361 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Inferloop Synthetic Data - Compute Resources'
+
+Parameters:
+  ProjectId:
+    Type: String
+    Description: Project identifier
+    
+  Environment:
+    Type: String
+    Description: Deployment environment
+    
+  VpcId:
+    Type: String
+    Description: VPC ID from networking stack
+    
+  SubnetIds:
+    Type: CommaDelimitedList
+    Description: Subnet IDs for compute resources
+    
+  SecurityGroupId:
+    Type: String
+    Description: Security group ID for instances
+    
+  InstanceType:
+    Type: String
+    Description: EC2 instance type
+    Default: t3.medium
+    
+  MinInstances:
+    Type: Number
+    Description: Minimum number of instances
+    Default: 1
+    
+  MaxInstances:
+    Type: Number
+    Description: Maximum number of instances
+    Default: 5
+    
+  DesiredCapacity:
+    Type: Number
+    Description: Desired number of instances
+    Default: 2
+    
+  ContainerImage:
+    Type: String
+    Description: Docker image for the application
+    
+  DiskSize:
+    Type: Number
+    Description: EBS volume size in GB
+    Default: 100
+    
+  IamRole:
+    Type: String
+    Description: IAM role ARN for instances
+    
+  S3BucketName:
+    Type: String
+    Description: S3 bucket name for data storage
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      AMI: ami-0ff8a91507f77f867
+    us-west-2:
+      AMI: ami-0bdb828fd58c52235
+    eu-west-1:
+      AMI: ami-047bb4163c506cd98
+    eu-central-1:
+      AMI: ami-0233214e13e500f77
+
+Resources:
+  # ECS Cluster
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${ProjectId}-${Environment}-cluster'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+        - !Ref EcsCapacityProvider
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: !Ref EcsCapacityProvider
+          Weight: 1
+          Base: 1
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectId
+        - Key: Environment
+          Value: !Ref Environment
+          
+  # Launch Template
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectId}-${Environment}-template'
+      LaunchTemplateData:
+        ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !Sub 'arn:aws:iam::${AWS::AccountId}:instance-profile/${ProjectId}-${Environment}-instance-profile'
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: !Ref DiskSize
+              VolumeType: gp3
+              DeleteOnTermination: true
+              Encrypted: true
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            amazon-linux-extras install docker -y
+            service docker start
+            usermod -a -G docker ec2-user
+            
+            # Install ECS agent
+            amazon-linux-extras install ecs -y
+            echo "ECS_CLUSTER=${EcsCluster}" >> /etc/ecs/ecs.config
+            echo "ECS_ENABLE_CONTAINER_METADATA=true" >> /etc/ecs/ecs.config
+            
+            # Install CloudWatch agent
+            wget https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm
+            rpm -U ./amazon-cloudwatch-agent.rpm
+            
+            # Install SSM agent
+            yum install -y amazon-ssm-agent
+            systemctl enable amazon-ssm-agent
+            systemctl start amazon-ssm-agent
+            
+  # Auto Scaling Group
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub '${ProjectId}-${Environment}-asg'
+      VPCZoneIdentifier: !Ref SubnetIds
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinInstances
+      MaxSize: !Ref MaxInstances
+      DesiredCapacity: !Ref DesiredCapacity
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      TargetGroupARNs:
+        - !ImportValue
+          Fn::Sub: '${AWS::StackName}-TargetGroupArn'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectId}-${Environment}-instance'
+          PropagateAtLaunch: true
+        - Key: Project
+          Value: !Ref ProjectId
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: !Ref Environment
+          PropagateAtLaunch: true
+          
+  # ECS Capacity Provider
+  EcsCapacityProvider:
+    Type: AWS::ECS::CapacityProvider
+    Properties:
+      Name: !Sub '${ProjectId}-${Environment}-capacity-provider'
+      AutoScalingGroupProvider:
+        AutoScalingGroupArn: !Ref AutoScalingGroup
+        ManagedScaling:
+          Status: ENABLED
+          TargetCapacity: 100
+          MinimumScalingStepSize: 1
+          MaximumScalingStepSize: 10
+        ManagedTerminationProtection: DISABLED
+        
+  # Task Definition
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${ProjectId}-${Environment}-task'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - EC2
+        - FARGATE
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: !ImportValue
+        Fn::Sub: '${AWS::StackName}-EcsTaskExecutionRoleArn'
+      TaskRoleArn: !ImportValue
+        Fn::Sub: '${AWS::StackName}-EcsTaskRoleArn'
+      ContainerDefinitions:
+        - Name: synthdata
+          Image: !Ref ContainerImage
+          Memory: 2048
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          Environment:
+            - Name: PROJECT_ID
+              Value: !Ref ProjectId
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: S3_BUCKET
+              Value: !Ref S3BucketName
+            - Name: AWS_REGION
+              Value: !Ref 'AWS::Region'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: synthdata
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:8000/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+            
+  # ECS Service
+  EcsService:
+    Type: AWS::ECS::Service
+    DependsOn: LoadBalancerListener
+    Properties:
+      ServiceName: !Sub '${ProjectId}-${Environment}-service'
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCapacity
+      LaunchType: EC2
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref SubnetIds
+          SecurityGroups:
+            - !Ref SecurityGroupId
+      LoadBalancers:
+        - ContainerName: synthdata
+          ContainerPort: 8000
+          TargetGroupArn: !ImportValue
+            Fn::Sub: '${AWS::StackName}-TargetGroupArn'
+      HealthCheckGracePeriodSeconds: 300
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+          
+  # Load Balancer Listener (reference)
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !ImportValue
+        Fn::Sub: '${AWS::StackName}-LoadBalancerArn'
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !ImportValue
+            Fn::Sub: '${AWS::StackName}-TargetGroupArn'
+            
+  # CloudWatch Log Group
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${ProjectId}-${Environment}'
+      RetentionInDays: 30
+      
+  # Auto Scaling Policies
+  ScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 70.0
+        
+  ScaleUpAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectId}-${Environment}-scale-up'
+      AlarmDescription: Scale up when CPU exceeds 80%
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref AutoScalingGroup
+          
+  # Lambda Function for Batch Processing
+  BatchLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectId}-${Environment}-batch'
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !ImportValue
+        Fn::Sub: '${AWS::StackName}-LambdaExecutionRoleArn'
+      Timeout: 900
+      MemorySize: 3008
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref S3BucketName
+          DYNAMODB_TABLE: !ImportValue
+            Fn::Sub: '${AWS::StackName}-DynamoDBTableName'
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          
+          def lambda_handler(event, context):
+              s3 = boto3.client('s3')
+              dynamodb = boto3.resource('dynamodb')
+              
+              bucket = os.environ['S3_BUCKET']
+              table_name = os.environ['DYNAMODB_TABLE']
+              
+              # Process batch job
+              job_id = event.get('job_id')
+              
+              # TODO: Implement actual batch processing
+              
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'message': 'Batch processing completed',
+                      'job_id': job_id
+                  })
+              }
+
+Outputs:
+  EcsClusterName:
+    Description: ECS cluster name
+    Value: !Ref EcsCluster
+    
+  AutoScalingGroupName:
+    Description: Auto Scaling Group name
+    Value: !Ref AutoScalingGroup
+    
+  TaskDefinitionArn:
+    Description: Task definition ARN
+    Value: !Ref TaskDefinition
+    
+  EcsServiceName:
+    Description: ECS service name
+    Value: !GetAtt EcsService.Name
+    
+  BatchLambdaArn:
+    Description: Batch Lambda function ARN
+    Value: !GetAtt BatchLambda.Arn
