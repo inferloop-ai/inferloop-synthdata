@@ -1,0 +1,918 @@
+# Encryption Configuration for TextNLP Platform
+# Phase 2: Foundation Setup
+
+apiVersion: v1
+kind: EncryptionConfig
+metadata:
+  name: textnlp-encryption
+  version: "1.0"
+  environment: production
+
+# Encryption Strategy
+encryption_strategy:
+  # Core principles
+  principles:
+    - "Encryption Everywhere"
+    - "Zero Trust Data Protection"
+    - "Defense in Depth"
+    - "Compliance by Design"
+  
+  # Encryption domains
+  domains:
+    - "data_at_rest"
+    - "data_in_transit"
+    - "data_in_processing"
+    - "backup_data"
+    - "log_data"
+    - "configuration_data"
+  
+  # Key management hierarchy
+  key_hierarchy:
+    - level: "master_key"
+      description: "Root encryption key"
+      rotation_frequency: "yearly"
+      storage: "hsm"
+    
+    - level: "data_encryption_key"
+      description: "Service-specific encryption keys"
+      rotation_frequency: "quarterly"
+      storage: "kms"
+    
+    - level: "session_key"
+      description: "Temporary encryption keys"
+      rotation_frequency: "hourly"
+      storage: "memory"
+
+# Data at Rest Encryption
+data_at_rest:
+  # Database Encryption
+  database_encryption:
+    # Primary database (PostgreSQL)
+    postgresql:
+      enabled: true
+      encryption_method: "AES-256-CBC"
+      key_management: "customer_managed"
+      
+      # Transparent Data Encryption (TDE)
+      tde:
+        enabled: true
+        encryption_algorithm: "AES-256"
+        key_rotation_schedule: "90 days"
+        automatic_rotation: true
+      
+      # Column-level encryption for sensitive data
+      column_encryption:
+        enabled: true
+        
+        encrypted_columns:
+          - table: "users"
+            column: "email"
+            encryption_type: "deterministic"
+            key_name: "user_data_key"
+          
+          - table: "api_keys"
+            column: "key_value"
+            encryption_type: "randomized"
+            key_name: "api_key_encryption_key"
+          
+          - table: "generation_logs"
+            column: "prompt_text"
+            encryption_type: "searchable"
+            key_name: "content_encryption_key"
+          
+          - table: "user_profiles"
+            column: "personal_info"
+            encryption_type: "format_preserving"
+            key_name: "pii_encryption_key"
+      
+      # Backup encryption
+      backup_encryption:
+        enabled: true
+        encryption_algorithm: "AES-256-GCM"
+        compression_before_encryption: true
+        key_derivation: "PBKDF2"
+        
+        # Point-in-time recovery encryption
+        pitr_encryption: true
+        wal_encryption: true
+    
+    # Cache database (Redis)
+    redis:
+      enabled: true
+      encryption_method: "AES-256-CTR"
+      
+      # Redis-specific encryption
+      rdb_encryption: true
+      aof_encryption: true
+      
+      # In-memory encryption for sensitive cached data
+      memory_encryption:
+        enabled: true
+        encryption_keys:
+          - key_name: "session_cache_key"
+            data_pattern: "session:*"
+          - key_name: "model_cache_key"
+            data_pattern: "model:*"
+          - key_name: "api_response_cache_key"
+            data_pattern: "response:*"
+  
+  # File System Encryption
+  filesystem_encryption:
+    # OS-level encryption
+    full_disk_encryption:
+      enabled: true
+      encryption_standard: "LUKS2"
+      cipher: "AES-XTS-256"
+      hash_algorithm: "SHA-256"
+      key_derivation: "Argon2"
+      
+      # Boot partition encryption
+      boot_encryption: true
+      secure_boot: true
+      
+      # Swap encryption
+      swap_encryption: true
+      hibernate_encryption: true
+    
+    # Application data directories
+    application_directories:
+      - path: "/opt/textnlp/data"
+        encryption_type: "AES-256-GCM"
+        key_name: "app_data_key"
+        mount_options: "encrypt,integrity"
+      
+      - path: "/var/log/textnlp"
+        encryption_type: "AES-256-CBC"
+        key_name: "log_encryption_key"
+        compression: true
+      
+      - path: "/tmp/textnlp"
+        encryption_type: "AES-256-CTR"
+        key_name: "temp_data_key"
+        auto_cleanup: true
+  
+  # Object Storage Encryption
+  object_storage:
+    # Model storage
+    model_storage:
+      # AWS S3
+      aws_s3:
+        default_encryption:
+          enabled: true
+          encryption_type: "SSE-KMS"
+          kms_key_id: "arn:aws:kms:us-east-1:ACCOUNT:key/MODEL-STORAGE-KEY"
+          bucket_key_enabled: true
+        
+        # Object-level encryption
+        object_encryption:
+          large_models:
+            encryption_algorithm: "AES-256-GCM"
+            compression_before_encryption: true
+            chunked_encryption: true
+            chunk_size: "100MB"
+          
+          model_metadata:
+            encryption_algorithm: "AES-256-CBC"
+            searchable_encryption: true
+      
+      # GCP Cloud Storage
+      gcp_gcs:
+        default_encryption:
+          enabled: true
+          encryption_type: "CMEK"
+          kms_key_name: "projects/textnlp-prod-001/locations/us-central1/keyRings/models/cryptoKeys/model-storage"
+        
+        # Envelope encryption
+        envelope_encryption:
+          enabled: true
+          dek_algorithm: "AES-256-GCM"
+          kek_rotation: "90 days"
+      
+      # Azure Blob Storage
+      azure_blob:
+        default_encryption:
+          enabled: true
+          encryption_type: "Customer-managed keys"
+          key_vault_uri: "https://textnlp-kv.vault.azure.net/keys/model-storage-key"
+          key_version: "latest"
+        
+        # Blob-level encryption
+        blob_encryption:
+          encryption_scope: "model-encryption-scope"
+          infrastructure_encryption: true
+    
+    # Dataset storage
+    dataset_storage:
+      encryption_at_upload: true
+      client_side_encryption: true
+      
+      # Sensitive dataset encryption
+      sensitive_datasets:
+        pre_processing_encryption: true
+        tokenization_with_encryption: true
+        
+        # Format-preserving encryption for structured data
+        fpe_encryption:
+          enabled: true
+          algorithm: "FF3-1"
+          preserve_format: true
+          maintain_referential_integrity: true
+  
+  # Container and Image Encryption
+  container_encryption:
+    # Container runtime encryption
+    runtime_encryption:
+      enabled: true
+      
+      # containerd encryption
+      containerd:
+        image_encryption: true
+        layer_encryption: true
+        encryption_key_provider: "kms"
+      
+      # Docker encryption
+      docker:
+        device_mapper_encryption: true
+        overlay2_encryption: true
+    
+    # Container image encryption
+    image_encryption:
+      # Registry encryption
+      registry_encryption:
+        aws_ecr:
+          encryption_type: "KMS"
+          kms_key: "arn:aws:kms:us-east-1:ACCOUNT:key/CONTAINER-KEY"
+        
+        gcp_gcr:
+          encryption_type: "CMEK"
+          kms_key: "projects/textnlp-prod-001/locations/us-central1/keyRings/containers/cryptoKeys/image-encryption"
+        
+        azure_acr:
+          encryption_type: "Customer-managed keys"
+          key_vault_key: "https://textnlp-kv.vault.azure.net/keys/container-key"
+      
+      # Layer-specific encryption
+      layer_encryption:
+        base_layers: "standard_encryption"
+        application_layers: "enhanced_encryption"
+        secret_layers: "high_security_encryption"
+
+# Data in Transit Encryption
+data_in_transit:
+  # TLS Configuration
+  tls_configuration:
+    # Minimum TLS version
+    minimum_version: "TLSv1.3"
+    
+    # Cipher suites (TLS 1.3)
+    cipher_suites:
+      - "TLS_AES_256_GCM_SHA384"
+      - "TLS_CHACHA20_POLY1305_SHA256"
+      - "TLS_AES_128_GCM_SHA256"
+    
+    # TLS 1.2 fallback (if required)
+    tls12_cipher_suites:
+      - "ECDHE-ECDSA-AES256-GCM-SHA384"
+      - "ECDHE-RSA-AES256-GCM-SHA384"
+      - "ECDHE-ECDSA-CHACHA20-POLY1305"
+      - "ECDHE-RSA-CHACHA20-POLY1305"
+    
+    # Certificate configuration
+    certificates:
+      # Primary certificate
+      primary:
+        type: "ECC"
+        curve: "P-384"
+        signature_algorithm: "ECDSA-SHA384"
+        key_size: 384
+        validity_period: "90 days"
+        auto_renewal: true
+        
+        # Certificate transparency
+        ct_logs: true
+        sct_verification: true
+      
+      # Backup certificate (RSA)
+      backup:
+        type: "RSA"
+        key_size: 4096
+        signature_algorithm: "RSA-PSS-SHA384"
+        validity_period: "90 days"
+        auto_renewal: true
+    
+    # HSTS configuration
+    hsts:
+      enabled: true
+      max_age: 31536000  # 1 year
+      include_subdomains: true
+      preload: true
+    
+    # OCSP stapling
+    ocsp_stapling:
+      enabled: true
+      cache_duration: "1 hour"
+      fallback_responder: true
+  
+  # API Communication Encryption
+  api_encryption:
+    # External API encryption
+    external_apis:
+      encryption_method: "TLS 1.3"
+      
+      # API gateway encryption
+      api_gateway:
+        client_certificate_required: false
+        mutual_tls_optional: true
+        
+        # Request/response encryption
+        request_encryption:
+          sensitive_endpoints: true
+          encryption_algorithm: "AES-256-GCM"
+          key_derivation: "HKDF-SHA256"
+        
+        response_encryption:
+          enabled: false  # TLS sufficient for most cases
+          large_responses: true  # Encrypt responses > 1MB
+      
+      # Rate limiting with encryption
+      rate_limiting:
+        encrypted_tokens: true
+        token_encryption_key: "rate_limit_token_key"
+    
+    # Internal service communication
+    internal_services:
+      # Service mesh encryption
+      service_mesh:
+        provider: "istio"
+        mutual_tls: "STRICT"
+        
+        # mTLS configuration
+        mtls:
+          certificate_lifetime: "24 hours"
+          certificate_rotation: "automatic"
+          root_ca_rotation: "yearly"
+          
+          # Cipher suites for service-to-service
+          cipher_suites:
+            - "TLS_AES_256_GCM_SHA384"
+            - "TLS_CHACHA20_POLY1305_SHA256"
+      
+      # gRPC encryption
+      grpc:
+        tls_enabled: true
+        tls_version: "TLSv1.3"
+        
+        # Application-layer encryption for sensitive data
+        application_layer_encryption:
+          enabled: true
+          sensitive_fields:
+            - "user_prompts"
+            - "generated_text"
+            - "model_parameters"
+          encryption_algorithm: "AES-256-GCM"
+  
+  # Database Connection Encryption
+  database_connections:
+    # PostgreSQL connections
+    postgresql:
+      ssl_mode: "require"
+      ssl_version: "TLSv1.3"
+      
+      # Connection-level encryption
+      connection_encryption:
+        encryption_method: "SCRAM-SHA-256-PLUS"
+        channel_binding: true
+        
+        # Connection pooling encryption
+        pgbouncer_ssl: true
+        ssl_cert_verification: true
+    
+    # Redis connections
+    redis:
+      tls_enabled: true
+      tls_version: "TLSv1.3"
+      
+      # AUTH with encryption
+      auth_encryption: true
+      auth_method: "ACL"
+      
+      # Stunnel for legacy Redis
+      stunnel:
+        enabled: false
+        psk_encryption: true
+  
+  # Load Balancer Encryption
+  load_balancer:
+    # SSL termination
+    ssl_termination:
+      termination_point: "load_balancer"
+      
+      # Certificate management
+      certificate_management:
+        auto_renewal: true
+        renewal_threshold: "30 days"
+        
+        # Let's Encrypt integration
+        lets_encrypt:
+          enabled: false  # Use internal CA
+          challenge_type: "dns-01"
+        
+        # Internal CA
+        internal_ca:
+          enabled: true
+          ca_name: "TextNLP Internal CA"
+          intermediate_ca: true
+    
+    # Backend encryption
+    backend_encryption:
+      enabled: true
+      encryption_method: "TLS 1.3"
+      certificate_verification: true
+
+# Data in Processing Encryption
+data_in_processing:
+  # Memory Encryption
+  memory_encryption:
+    # Hardware-based encryption
+    hardware_encryption:
+      # Intel TME (Total Memory Encryption)
+      intel_tme:
+        enabled: true
+        encryption_algorithm: "AES-128-XTS"
+      
+      # AMD SME (Secure Memory Encryption)
+      amd_sme:
+        enabled: true
+        encryption_key_bits: 128
+      
+      # ARM Pointer Authentication
+      arm_pointer_auth:
+        enabled: true
+        key_rotation: "per_context_switch"
+    
+    # Application-level memory encryption
+    application_memory:
+      # Sensitive data encryption in memory
+      sensitive_data_encryption:
+        encryption_algorithm: "AES-256-GCM"
+        key_derivation: "HKDF-SHA256"
+        
+        # Data types to encrypt
+        encrypted_data_types:
+          - "user_prompts"
+          - "api_keys"
+          - "model_weights"
+          - "intermediate_results"
+          - "cached_responses"
+        
+        # Memory protection
+        memory_protection:
+          stack_canaries: true
+          heap_protection: true
+          control_flow_integrity: true
+      
+      # GPU memory encryption
+      gpu_memory_encryption:
+        enabled: true
+        
+        # NVIDIA GPU encryption
+        nvidia_encryption:
+          confidential_computing: true
+          memory_encryption: "AES-256"
+          secure_boot: true
+        
+        # Model parameter encryption
+        model_encryption:
+          weights_encryption: true
+          gradient_encryption: true
+          activations_encryption: false  # Performance impact
+  
+  # Secure Enclaves
+  secure_enclaves:
+    # Intel SGX
+    intel_sgx:
+      enabled: false  # Enable if hardware supports
+      enclave_size: "256MB"
+      
+      # Enclave applications
+      applications:
+        - "sensitive_model_inference"
+        - "key_derivation"
+        - "secure_aggregation"
+    
+    # AMD SEV
+    amd_sev:
+      enabled: false  # Enable if hardware supports
+      encryption_key_bits: 128
+      
+      # Secure nested paging
+      snp_enabled: true
+    
+    # ARM TrustZone
+    arm_trustzone:
+      enabled: false  # Enable for ARM deployments
+      secure_world_services:
+        - "crypto_operations"
+        - "key_storage"
+        - "attestation"
+  
+  # Homomorphic Encryption
+  homomorphic_encryption:
+    # For privacy-preserving computation
+    enabled: false  # Experimental feature
+    
+    # Library configuration
+    library: "SEAL"  # Microsoft SEAL
+    scheme: "BFV"    # Brakerski-Fan-Vercauteren
+    
+    # Use cases
+    use_cases:
+      - "federated_learning"
+      - "private_model_inference"
+      - "encrypted_data_analytics"
+
+# Key Management
+key_management:
+  # Key Management Services
+  kms_providers:
+    # AWS KMS
+    aws_kms:
+      enabled: true
+      region: "us-east-1"
+      
+      # Customer Managed Keys
+      customer_managed_keys:
+        - key_alias: "textnlp-master-key"
+          description: "Master encryption key for TextNLP platform"
+          key_usage: "ENCRYPT_DECRYPT"
+          key_spec: "SYMMETRIC_DEFAULT"
+          origin: "AWS_KMS"
+          
+          # Key policy
+          key_policy:
+            enable_iam_user_permissions: true
+            key_administrators:
+              - "arn:aws:iam::ACCOUNT:user/john.architect"
+              - "arn:aws:iam::ACCOUNT:role/TextNLP-Admin-Role"
+            
+            key_users:
+              - "arn:aws:iam::ACCOUNT:role/TextNLP-App-Role"
+              - "arn:aws:iam::ACCOUNT:role/TextNLP-Lambda-Role"
+          
+          # Automatic rotation
+          automatic_rotation:
+            enabled: true
+            rotation_period_days: 365
+        
+        - key_alias: "textnlp-data-key"
+          description: "Data encryption key for application data"
+          key_usage: "ENCRYPT_DECRYPT"
+          automatic_rotation:
+            enabled: true
+            rotation_period_days: 90
+    
+    # GCP KMS
+    gcp_kms:
+      enabled: true
+      project: "textnlp-prod-001"
+      location: "us-central1"
+      
+      # Key rings
+      key_rings:
+        - name: "textnlp-primary"
+          location: "us-central1"
+          
+          # Crypto keys
+          crypto_keys:
+            - name: "master-encryption-key"
+              purpose: "ENCRYPT_DECRYPT"
+              algorithm: "GOOGLE_SYMMETRIC_ENCRYPTION"
+              
+              # Automatic rotation
+              rotation_schedule:
+                rotation_period: "7776000s"  # 90 days
+                next_rotation_time: "auto"
+              
+              # Version template
+              version_template:
+                algorithm: "GOOGLE_SYMMETRIC_ENCRYPTION"
+                protection_level: "SOFTWARE"  # or "HSM"
+    
+    # Azure Key Vault
+    azure_keyvault:
+      enabled: true
+      vault_name: "textnlp-kv"
+      location: "eastus"
+      
+      # Keys
+      keys:
+        - name: "master-encryption-key"
+          key_type: "RSA"
+          key_size: 4096
+          enabled: true
+          
+          # Automatic rotation
+          rotation_policy:
+            lifetime_actions:
+              - action: "rotate"
+                trigger:
+                  time_before_expiry: "P30D"  # 30 days
+          
+          # Access policies
+          access_policies:
+            - tenant_id: "TENANT_ID"
+              object_id: "OBJECT_ID"
+              permissions:
+                keys: ["get", "create", "delete", "list", "update", "import", "backup", "restore"]
+    
+    # HashiCorp Vault
+    hashicorp_vault:
+      enabled: true
+      address: "https://vault.textnlp.local:8200"
+      
+      # Authentication
+      auth_method: "kubernetes"
+      
+      # Secret engines
+      secret_engines:
+        # Transit engine for encryption as a service
+        - name: "transit"
+          path: "transit/"
+          type: "transit"
+          
+          # Encryption keys
+          keys:
+            - name: "textnlp-app-key"
+              type: "aes256-gcm96"
+              deletion_allowed: false
+              exportable: false
+              allow_plaintext_backup: false
+              
+              # Automatic rotation
+              auto_rotate_period: "2160h"  # 90 days
+            
+            - name: "textnlp-db-key"
+              type: "chacha20-poly1305"
+              auto_rotate_period: "720h"   # 30 days
+        
+        # PKI engine for certificate management
+        - name: "pki"
+          path: "pki/"
+          type: "pki"
+          
+          # Root CA
+          root_ca:
+            common_name: "TextNLP Root CA"
+            ttl: "87600h"  # 10 years
+            key_type: "ec"
+            key_bits: 384
+          
+          # Intermediate CA
+          intermediate_ca:
+            common_name: "TextNLP Intermediate CA"
+            ttl: "43800h"  # 5 years
+  
+  # Hardware Security Modules
+  hsm:
+    # AWS CloudHSM
+    aws_cloudhsm:
+      enabled: false  # Enable for high-security requirements
+      cluster_id: "cluster-xxxxxxxxx"
+      
+      # FIPS 140-2 Level 3 compliance
+      fips_compliance: true
+      
+      # Key ceremonies
+      key_ceremony:
+        required_operators: 3
+        quorum: 2
+        audit_logging: true
+    
+    # Azure Dedicated HSM
+    azure_hsm:
+      enabled: false
+      location: "eastus"
+      sku: "SafeNet Luna Network HSM A790"
+      
+      # High availability
+      ha_configuration:
+        primary_hsm: "textnlp-hsm-primary"
+        secondary_hsm: "textnlp-hsm-secondary"
+        auto_failover: true
+  
+  # Key Rotation
+  key_rotation:
+    # Automatic rotation schedules
+    schedules:
+      - key_type: "master_keys"
+        rotation_frequency: "yearly"
+        notification_before: "30 days"
+        
+      - key_type: "data_encryption_keys"
+        rotation_frequency: "quarterly"
+        notification_before: "7 days"
+        
+      - key_type: "session_keys"
+        rotation_frequency: "daily"
+        notification_before: "1 hour"
+      
+      - key_type: "api_keys"
+        rotation_frequency: "monthly"
+        notification_before: "3 days"
+    
+    # Emergency rotation
+    emergency_rotation:
+      enabled: true
+      trigger_conditions:
+        - "suspected_key_compromise"
+        - "security_incident"
+        - "compliance_requirement"
+      
+      # Automated emergency procedures
+      automated_procedures:
+        immediate_key_revocation: true
+        new_key_generation: true
+        service_restart_required: true
+        incident_notification: true
+
+# Backup Encryption
+backup_encryption:
+  # Database backups
+  database_backups:
+    encryption_enabled: true
+    encryption_algorithm: "AES-256-GCM"
+    compression_before_encryption: true
+    
+    # Backup encryption keys
+    backup_encryption_keys:
+      rotation_schedule: "monthly"
+      key_derivation: "PBKDF2"
+      salt_generation: "cryptographically_secure"
+    
+    # Cross-region backup encryption
+    cross_region_backups:
+      enabled: true
+      separate_encryption_keys: true
+      key_escrow: true
+  
+  # File system backups
+  filesystem_backups:
+    encryption_enabled: true
+    encryption_method: "GPG"
+    
+    # Backup verification
+    integrity_verification:
+      hash_algorithm: "SHA-256"
+      signature_verification: true
+      
+    # Long-term archival encryption
+    archival_encryption:
+      encryption_standard: "AES-256"
+      key_splitting: true
+      geographic_key_distribution: true
+
+# Compliance and Auditing
+compliance_auditing:
+  # Encryption compliance
+  compliance_standards:
+    - standard: "FIPS 140-2"
+      level: "Level 2"
+      modules: ["all_cryptographic_modules"]
+    
+    - standard: "Common Criteria"
+      evaluation_level: "EAL4+"
+      protection_profile: "database_protection"
+    
+    - standard: "GDPR"
+      requirements: ["data_protection_by_design", "encryption_of_personal_data"]
+    
+    - standard: "HIPAA"
+      requirements: ["administrative_safeguards", "physical_safeguards", "technical_safeguards"]
+  
+  # Audit logging
+  audit_logging:
+    encryption_events:
+      - "key_creation"
+      - "key_rotation"
+      - "key_deletion"
+      - "encryption_operations"
+      - "decryption_operations"
+      - "key_access_attempts"
+      - "certificate_operations"
+    
+    # Log encryption
+    log_encryption:
+      enabled: true
+      encryption_algorithm: "AES-256-CBC"
+      log_integrity_protection: true
+      
+      # Tamper detection
+      tamper_detection:
+        hash_chaining: true
+        digital_signatures: true
+        append_only_storage: true
+  
+  # Penetration testing
+  penetration_testing:
+    encryption_focused_testing:
+      frequency: "annually"
+      scope: "all_encryption_implementations"
+      
+      test_categories:
+        - "cryptographic_implementation"
+        - "key_management_security"
+        - "protocol_security"
+        - "side_channel_attacks"
+        - "timing_attacks"
+
+# Performance Optimization
+performance_optimization:
+  # Hardware acceleration
+  hardware_acceleration:
+    # AES-NI (Intel)
+    aes_ni:
+      enabled: true
+      instructions: ["AESENC", "AESENCLAST", "AESDEC", "AESDECLAST"]
+    
+    # Cryptographic acceleration
+    crypto_acceleration:
+      # Intel QuickAssist Technology
+      qat:
+        enabled: false  # Enable if hardware available
+        algorithms: ["AES", "RSA", "ECDSA", "SHA"]
+      
+      # ARM Crypto Extensions
+      arm_crypto:
+        enabled: false  # Enable for ARM deployments
+        features: ["AES", "SHA1", "SHA256"]
+  
+  # Algorithm selection
+  algorithm_optimization:
+    # Cipher selection based on hardware
+    adaptive_ciphers:
+      enabled: true
+      
+      selection_criteria:
+        - hardware_support: "primary"
+        - performance: "secondary"
+        - security_level: "mandatory"
+      
+      # Performance benchmarking
+      benchmarking:
+        enabled: true
+        benchmark_frequency: "monthly"
+        performance_threshold: "10% degradation"
+  
+  # Caching strategies
+  caching:
+    # Encrypted cache
+    encrypted_cache:
+      cache_encryption: true
+      cache_compression: true
+      
+      # TTL for encrypted cache entries
+      ttl_settings:
+        default_ttl: "1 hour"
+        sensitive_data_ttl: "5 minutes"
+        public_data_ttl: "24 hours"
+
+# Monitoring and Alerting
+monitoring_alerting:
+  # Encryption health monitoring
+  health_monitoring:
+    metrics:
+      - "encryption_operation_latency"
+      - "key_rotation_success_rate"
+      - "certificate_expiration_status"
+      - "hsm_availability"
+      - "kms_response_time"
+    
+    # Thresholds
+    thresholds:
+      encryption_latency: "100ms"
+      key_rotation_failure_rate: "0%"
+      certificate_expiration_warning: "30 days"
+      hsm_uptime: "99.9%"
+  
+  # Security alerts
+  security_alerts:
+    alert_conditions:
+      - "encryption_key_compromise_detected"
+      - "unusual_encryption_patterns"
+      - "failed_decryption_attempts"
+      - "key_rotation_failures"
+      - "certificate_validation_errors"
+    
+    # Alert channels
+    alert_channels:
+      - channel: "pagerduty"
+        severity: "critical"
+        conditions: ["key_compromise", "hsm_failure"]
+      
+      - channel: "slack"
+        severity: "warning"
+        conditions: ["certificate_expiration", "performance_degradation"]
+      
+      - channel: "email"
+        severity: "info"
+        conditions: ["successful_key_rotation", "compliance_reports"]

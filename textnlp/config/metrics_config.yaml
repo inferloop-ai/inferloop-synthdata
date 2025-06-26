@@ -1,0 +1,239 @@
+# Metrics Configuration for TextNLP
+# Comprehensive metrics collection and monitoring settings
+
+# Generation Metrics Configuration
+generation_metrics:
+  enabled: true
+  
+  # Enabled metric types
+  enabled_metrics:
+    - "latency"
+    - "throughput"
+    - "tokens_per_second"
+    - "length"
+    - "vocabulary_size"
+    - "safety_score"
+    - "success_rate"
+  
+  # Monitoring settings
+  monitoring:
+    enabled: true
+    interval: 10  # seconds
+  
+  # Tokenizer for analysis
+  tokenizer: "gpt2"
+
+# Quality Metrics Configuration
+quality_metrics:
+  enabled: true
+  
+  # Enabled quality metrics
+  enabled_metrics:
+    - "bleu"
+    - "rouge_1"
+    - "rouge_2"
+    - "rouge_l"
+    - "semantic_similarity"
+    - "fluency"
+    - "coherence"
+    - "diversity"
+    - "relevance"
+    - "factuality"
+  
+  # Models for quality assessment
+  models:
+    bertscore_model: "bert-base-uncased"
+    semantic_model: "all-MiniLM-L6-v2"
+  
+  # Processing settings
+  max_workers: 4
+  confidence_threshold: 0.5
+
+# Resource Tracking Configuration
+resource_tracking:
+  enabled: true
+  
+  # Resources to monitor
+  enabled_resources:
+    - "cpu"
+    - "memory"
+    - "gpu"
+    - "disk"
+    - "network"
+    - "process"
+  
+  # Monitoring settings
+  sample_interval: 10  # seconds
+  history_duration: 3600  # seconds (1 hour)
+  
+  # Alert thresholds (percentages)
+  alert_thresholds:
+    cpu_warning: 80.0
+    cpu_critical: 95.0
+    memory_warning: 80.0
+    memory_critical: 95.0
+    gpu_warning: 85.0
+    gpu_critical: 95.0
+    disk_warning: 80.0
+    disk_critical: 95.0
+  
+  # Cost tracking
+  cost_config:
+    cpu_cost_per_hour: 0.096
+    memory_cost_per_gb_hour: 0.012
+    gpu_cost_per_hour: 2.40
+    storage_cost_per_gb_hour: 0.023
+
+# Business Dashboard Configuration
+business_dashboard:
+  enabled: true
+  
+  # Database settings
+  database:
+    path: "business_metrics.db"
+    
+  # Data sources
+  data_sources:
+    generation_metrics: true
+    quality_metrics: true
+    resource_metrics: true
+    cost_metrics: true
+    safety_metrics: true
+  
+  # Default widgets
+  widgets:
+    - widget_id: "api_requests_chart"
+      title: "API Requests Over Time"
+      type: "chart"
+      config:
+        chart_type: "line"
+        time_range: "24h"
+    
+    - widget_id: "response_time_kpi"
+      title: "Average Response Time"
+      type: "kpi"
+      config:
+        aggregation: "avg"
+        format: "ms"
+    
+    - widget_id: "error_rate_alert"
+      title: "Error Rate Monitor"
+      type: "alert"
+      config:
+        threshold: 5.0
+        comparison: "greater_than"
+    
+    - widget_id: "cost_breakdown_table"
+      title: "Cost Breakdown"
+      type: "table"
+      config:
+        time_range: "30d"
+        group_by: "resource_type"
+
+# Storage and Persistence
+storage:
+  # Metrics retention
+  retention:
+    generation_metrics: 30  # days
+    quality_metrics: 30  # days
+    resource_metrics: 7  # days
+    business_metrics: 90  # days
+  
+  # Database settings
+  database:
+    type: "sqlite"  # "sqlite", "postgresql", "mysql"
+    connection_string: "sqlite:///metrics.db"
+    
+  # File storage settings
+  file_storage:
+    base_directory: "data/metrics"
+    format: "json"  # "json", "csv", "parquet"
+    compression: true
+
+# Real-time Monitoring
+real_time:
+  enabled: true
+  
+  # WebSocket settings for real-time dashboards
+  websocket:
+    enabled: true
+    port: 8001
+    update_interval: 5  # seconds
+  
+  # Alert notifications
+  alerts:
+    enabled: true
+    channels:
+      - type: "log"
+        level: "WARNING"
+      - type: "webhook"
+        url: "${WEBHOOK_URL}"
+        enabled: false
+
+# Integration Settings
+integration:
+  # External monitoring systems
+  prometheus:
+    enabled: false
+    port: 9090
+    metrics_path: "/metrics"
+  
+  grafana:
+    enabled: false
+    dashboard_config: "config/grafana_dashboard.json"
+  
+  elasticsearch:
+    enabled: false
+    host: "localhost:9200"
+    index_prefix: "textnlp-metrics"
+  
+  # Cloud monitoring
+  cloudwatch:
+    enabled: false
+    region: "us-east-1"
+    namespace: "TextNLP/Metrics"
+  
+  datadog:
+    enabled: false
+    api_key: "${DATADOG_API_KEY}"
+
+# Performance and Optimization
+performance:
+  # Async processing
+  async_processing: true
+  max_concurrent_calculations: 10
+  
+  # Caching
+  cache:
+    enabled: true
+    ttl: 300  # seconds
+    max_size: 1000
+  
+  # Batch processing
+  batch_processing:
+    enabled: true
+    batch_size: 100
+    batch_timeout: 5  # seconds
+  
+  # Data aggregation
+  aggregation:
+    enabled: true
+    intervals:
+      - "1m"
+      - "5m"
+      - "1h"
+      - "1d"
+
+# Development and Testing
+development:
+  # Mock data generation
+  generate_mock_data: false
+  mock_data_count: 1000
+  
+  # Debug settings
+  debug_mode: false
+  verbose_logging: false
+  
+  # Testing
+  test_mode: false
+  test_data_retention: 1  # days

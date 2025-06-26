@@ -1,0 +1,1081 @@
+# Security Foundation Configuration for TextNLP Platform
+# Phase 2: Foundation Setup
+
+apiVersion: v1
+kind: SecurityFoundationConfig
+metadata:
+  name: textnlp-security-foundation
+  version: "1.0"
+  environment: production
+
+# Security Framework
+security_framework:
+  # Security standards compliance
+  compliance_standards:
+    - "SOC 2 Type II"
+    - "ISO 27001"
+    - "GDPR"
+    - "CCPA"
+    - "HIPAA" # For healthcare clients
+  
+  # Security principles
+  principles:
+    - "Zero Trust Architecture"
+    - "Defense in Depth"
+    - "Principle of Least Privilege"
+    - "Encryption Everywhere"
+    - "Continuous Monitoring"
+    - "Incident Response Readiness"
+
+# Identity and Access Management (IAM)
+identity_access_management:
+  # Authentication methods
+  authentication:
+    multi_factor_authentication:
+      enabled: true
+      required_for_all_users: true
+      methods:
+        - "TOTP (Time-based One-Time Password)"
+        - "Hardware tokens (YubiKey)"
+        - "SMS (backup only)"
+        - "Authenticator apps"
+      
+      enforcement:
+        grace_period_days: 7
+        bypass_roles: []  # No MFA bypass
+    
+    single_sign_on:
+      enabled: true
+      provider: "Azure AD"  # or "Okta", "Auth0"
+      
+      saml_configuration:
+        entity_id: "https://textnlp.company.com"
+        assertion_consumer_service: "https://textnlp.company.com/saml/acs"
+        single_logout_service: "https://textnlp.company.com/saml/sls"
+      
+      oauth2_configuration:
+        client_id: "textnlp-app-client"
+        redirect_uri: "https://textnlp.company.com/oauth/callback"
+        scopes: ["openid", "profile", "email", "groups"]
+    
+    password_policy:
+      minimum_length: 14
+      complexity_requirements:
+        - "uppercase_letters"
+        - "lowercase_letters"
+        - "numbers"
+        - "special_characters"
+      
+      expiration_days: 90
+      history_count: 12
+      lockout_threshold: 5
+      lockout_duration_minutes: 30
+      
+      prohibited_passwords:
+        - "common_passwords_list"
+        - "company_name_variations"
+        - "product_name_variations"
+  
+  # Authorization framework
+  authorization:
+    rbac_model:
+      enabled: true
+      
+      # Roles definition
+      roles:
+        - name: "platform_admin"
+          description: "Full platform administration"
+          permissions:
+            - "platform:*:*"
+          
+        - name: "security_admin"
+          description: "Security administration"
+          permissions:
+            - "security:*:*"
+            - "audit:*:read"
+            - "compliance:*:*"
+        
+        - name: "devops_engineer"
+          description: "Infrastructure and deployment management"
+          permissions:
+            - "infrastructure:*:*"
+            - "deployment:*:*"
+            - "monitoring:*:read"
+        
+        - name: "ml_engineer"
+          description: "ML model development and training"
+          permissions:
+            - "models:*:*"
+            - "datasets:*:read"
+            - "training:*:*"
+            - "inference:*:read"
+        
+        - name: "api_developer"
+          description: "API development and testing"
+          permissions:
+            - "api:*:*"
+            - "models:*:read"
+            - "inference:*:*"
+        
+        - name: "data_scientist"
+          description: "Data analysis and model evaluation"
+          permissions:
+            - "datasets:*:read"
+            - "models:*:read"
+            - "analytics:*:*"
+            - "reports:*:*"
+        
+        - name: "business_user"
+          description: "Business user with limited access"
+          permissions:
+            - "api:generate:execute"
+            - "models:public:read"
+            - "reports:own:read"
+        
+        - name: "auditor"
+          description: "Read-only access for auditing"
+          permissions:
+            - "*:*:read"
+            - "audit:*:read"
+    
+    attribute_based_access_control:
+      enabled: true
+      
+      # Attributes for fine-grained access control
+      attributes:
+        user_attributes:
+          - "department"
+          - "clearance_level"
+          - "location"
+          - "employment_type"
+        
+        resource_attributes:
+          - "data_classification"
+          - "model_type"
+          - "environment"
+          - "sensitivity_level"
+        
+        environment_attributes:
+          - "time_of_day"
+          - "day_of_week"
+          - "location"
+          - "network_zone"
+      
+      # Access policies
+      policies:
+        - name: "sensitive_data_access"
+          description: "Access to sensitive/PII data"
+          rule: |
+            user.clearance_level >= "confidential" AND
+            resource.data_classification == "sensitive" AND
+            time.hour >= 8 AND time.hour <= 18
+        
+        - name: "production_deployment"
+          description: "Production deployment access"
+          rule: |
+            user.role IN ["platform_admin", "devops_engineer"] AND
+            resource.environment == "production" AND
+            user.location == "office"
+        
+        - name: "gpu_resource_access"
+          description: "Access to GPU resources"
+          rule: |
+            user.role IN ["ml_engineer", "data_scientist"] AND
+            resource.type == "gpu" AND
+            user.department IN ["ml", "ai", "research"]
+
+# Encryption Configuration
+encryption:
+  # Encryption at rest
+  at_rest:
+    # Database encryption
+    database:
+      enabled: true
+      encryption_type: "AES-256"
+      key_management: "customer_managed"
+      
+      # Key rotation
+      key_rotation:
+        enabled: true
+        rotation_schedule: "90 days"
+        automatic: true
+    
+    # File system encryption
+    filesystem:
+      enabled: true
+      encryption_type: "AES-256-XTS"
+      key_management: "luks"
+      
+    # Object storage encryption
+    object_storage:
+      enabled: true
+      encryption_type: "AES-256"
+      key_management: "kms"
+      
+      # Bucket-level encryption
+      default_encryption: true
+      encryption_key_rotation: "yearly"
+    
+    # Model storage encryption
+    model_storage:
+      enabled: true
+      encryption_type: "AES-256-GCM"
+      encryption_at_upload: true
+      
+      # Model versioning encryption
+      version_encryption: true
+      metadata_encryption: true
+  
+  # Encryption in transit
+  in_transit:
+    # TLS configuration
+    tls:
+      minimum_version: "1.3"
+      cipher_suites:
+        - "TLS_AES_256_GCM_SHA384"
+        - "TLS_CHACHA20_POLY1305_SHA256"
+        - "TLS_AES_128_GCM_SHA256"
+      
+      # Certificate management
+      certificate_authority: "internal_ca"
+      certificate_rotation: "90 days"
+      certificate_transparency: true
+      
+      # HSTS configuration
+      hsts:
+        enabled: true
+        max_age: 31536000  # 1 year
+        include_subdomains: true
+        preload: true
+    
+    # API encryption
+    api_encryption:
+      enabled: true
+      encryption_method: "TLS 1.3"
+      
+      # API key encryption
+      api_key_encryption: true
+      payload_encryption: false  # TLS sufficient for most cases
+      
+      # JWT token encryption
+      jwt_encryption:
+        enabled: true
+        algorithm: "RS256"
+        key_rotation: "30 days"
+    
+    # Inter-service communication
+    service_mesh_encryption:
+      enabled: true
+      mutual_tls: true
+      
+      # Certificate management
+      cert_manager: "istio"
+      cert_rotation: "24 hours"
+      
+      # Service-to-service policies
+      default_policy: "STRICT"  # Require mTLS
+  
+  # Key management
+  key_management:
+    # Key Management Service
+    kms:
+      provider: "HashiCorp Vault"  # or "AWS KMS", "Azure Key Vault"
+      
+      vault_configuration:
+        address: "https://vault.textnlp.local:8200"
+        auth_method: "kubernetes"
+        
+        # Secret engines
+        secret_engines:
+          - name: "kv-v2"
+            path: "secret/"
+            description: "General secrets storage"
+          
+          - name: "pki"
+            path: "pki/"
+            description: "Certificate authority"
+            
+          - name: "database"
+            path: "database/"
+            description: "Dynamic database credentials"
+          
+          - name: "transit"
+            path: "transit/"
+            description: "Encryption as a service"
+        
+        # Policies
+        policies:
+          - name: "textnlp-app-policy"
+            rules: |
+              path "secret/data/textnlp/*" {
+                capabilities = ["read"]
+              }
+              path "database/creds/textnlp-app" {
+                capabilities = ["read"]
+              }
+              path "transit/encrypt/textnlp" {
+                capabilities = ["update"]
+              }
+          
+          - name: "textnlp-admin-policy"
+            rules: |
+              path "secret/*" {
+                capabilities = ["create", "read", "update", "delete", "list"]
+              }
+              path "pki/*" {
+                capabilities = ["create", "read", "update", "delete", "list"]
+              }
+    
+    # Hardware Security Modules
+    hsm:
+      enabled: false  # Enable for high-security environments
+      provider: "CloudHSM"
+      
+      # FIPS 140-2 Level 3 compliance
+      fips_compliance: true
+      
+      # Key ceremonies
+      key_ceremony:
+        required_operators: 3
+        quorum: 2
+        audit_logging: true
+
+# Network Security
+network_security:
+  # Firewall configuration
+  firewall:
+    # Web Application Firewall
+    waf:
+      enabled: true
+      provider: "cloud_armor"  # or "azure_waf", "aws_waf"
+      
+      rule_sets:
+        - "OWASP Top 10"
+        - "Known CVEs"
+        - "Bot protection"
+        - "DDoS protection"
+      
+      # Custom rules
+      custom_rules:
+        - name: "rate_limiting"
+          priority: 100
+          action: "rate_limit"
+          match_conditions:
+            - "request_rate > 100 per minute per IP"
+        
+        - name: "geo_blocking"
+          priority: 200
+          action: "block"
+          match_conditions:
+            - "source_country NOT IN ['US', 'CA', 'GB', 'DE', 'FR']"
+        
+        - name: "sql_injection_protection"
+          priority: 300
+          action: "block"
+          match_conditions:
+            - "query_string CONTAINS sql_injection_patterns"
+    
+    # Network segmentation
+    segmentation:
+      # Network zones
+      zones:
+        - name: "dmz"
+          description: "Demilitarized zone for public-facing services"
+          subnets: ["10.0.1.0/24"]
+          allowed_protocols: ["HTTP", "HTTPS"]
+        
+        - name: "application"
+          description: "Application tier"
+          subnets: ["10.0.10.0/24"]
+          allowed_protocols: ["HTTP", "HTTPS", "gRPC"]
+        
+        - name: "gpu"
+          description: "GPU processing tier"
+          subnets: ["10.0.20.0/24"]
+          allowed_protocols: ["gRPC", "SSH"]
+        
+        - name: "database"
+          description: "Database tier"
+          subnets: ["10.0.30.0/24"]
+          allowed_protocols: ["PostgreSQL", "Redis"]
+        
+        - name: "management"
+          description: "Management and monitoring"
+          subnets: ["10.0.40.0/24"]
+          allowed_protocols: ["SSH", "HTTPS", "SNMP"]
+      
+      # Micro-segmentation rules
+      micro_segmentation:
+        enabled: true
+        default_policy: "deny_all"
+        
+        rules:
+          - from_zone: "dmz"
+            to_zone: "application"
+            protocols: ["HTTPS"]
+            ports: [443, 8000]
+          
+          - from_zone: "application"
+            to_zone: "gpu"
+            protocols: ["gRPC"]
+            ports: [50051]
+          
+          - from_zone: "application"
+            to_zone: "database"
+            protocols: ["PostgreSQL", "Redis"]
+            ports: [5432, 6379]
+  
+  # Intrusion Detection and Prevention
+  ids_ips:
+    enabled: true
+    
+    # Network-based IDS/IPS
+    network_ids:
+      provider: "Suricata"
+      
+      rule_sets:
+        - "Emerging Threats"
+        - "Snort rules"
+        - "Custom rules"
+      
+      # Detection modes
+      modes:
+        - "signature_based"
+        - "anomaly_based"
+        - "behavioral_analysis"
+      
+      # Response actions
+      response_actions:
+        - "alert"
+        - "log"
+        - "block"  # For critical threats
+        - "quarantine"
+    
+    # Host-based IDS
+    host_ids:
+      provider: "OSSEC"
+      
+      monitoring:
+        - "file_integrity"
+        - "log_analysis"
+        - "rootkit_detection"
+        - "policy_monitoring"
+      
+      # Real-time monitoring
+      real_time_monitoring: true
+      
+      # Alerting
+      alert_levels:
+        - level: 7  # High
+          action: "immediate_alert"
+        - level: 10  # Medium
+          action: "daily_report"
+        - level: 3   # Low
+          action: "weekly_report"
+  
+  # DDoS Protection
+  ddos_protection:
+    enabled: true
+    
+    # Protection layers
+    layers:
+      - layer: "L3/L4"
+        provider: "cloud_provider"
+        always_on: true
+      
+      - layer: "L7"
+        provider: "waf"
+        rate_limiting: true
+        behavioral_analysis: true
+    
+    # Mitigation strategies
+    mitigation:
+      auto_mitigation: true
+      
+      thresholds:
+        - metric: "requests_per_second"
+          threshold: 10000
+          action: "rate_limit"
+        
+        - metric: "bandwidth_usage"
+          threshold: "10 Gbps"
+          action: "traffic_shaping"
+        
+        - metric: "concurrent_connections"
+          threshold: 50000
+          action: "connection_limiting"
+
+# Application Security
+application_security:
+  # Secure development lifecycle
+  sdlc:
+    # Security requirements
+    security_requirements:
+      - "Input validation"
+      - "Output encoding"
+      - "Authentication and authorization"
+      - "Session management"
+      - "Error handling"
+      - "Logging and monitoring"
+      - "Data protection"
+    
+    # Security testing
+    security_testing:
+      static_analysis:
+        enabled: true
+        tools: ["SonarQube", "Checkmarx"]
+        scan_frequency: "every_commit"
+        
+        # Quality gates
+        quality_gates:
+          - metric: "security_hotspots"
+            threshold: 0
+          - metric: "vulnerabilities"
+            threshold: 0
+          - metric: "bugs"
+            threshold: 10
+      
+      dynamic_analysis:
+        enabled: true
+        tools: ["OWASP ZAP", "Burp Suite"]
+        scan_frequency: "weekly"
+        
+        # Scan types
+        scan_types:
+          - "baseline_scan"
+          - "full_scan"
+          - "api_scan"
+      
+      dependency_scanning:
+        enabled: true
+        tools: ["Snyk", "npm audit", "pip-audit"]
+        scan_frequency: "daily"
+        
+        # Vulnerability thresholds
+        vulnerability_thresholds:
+          critical: 0
+          high: 0
+          medium: 5
+          low: 20
+      
+      container_scanning:
+        enabled: true
+        tools: ["Trivy", "Clair"]
+        scan_frequency: "on_build"
+        
+        # Base image policies
+        base_image_policies:
+          - "use_official_images"
+          - "keep_images_updated"
+          - "minimize_attack_surface"
+  
+  # Runtime security
+  runtime_security:
+    # Application monitoring
+    application_monitoring:
+      enabled: true
+      
+      # Security events
+      security_events:
+        - "authentication_failures"
+        - "authorization_violations"
+        - "suspicious_api_calls"
+        - "data_access_anomalies"
+        - "privilege_escalation_attempts"
+      
+      # Behavioral analysis
+      behavioral_analysis:
+        enabled: true
+        baseline_period: "30 days"
+        anomaly_threshold: 2.5  # Standard deviations
+      
+      # Real-time alerting
+      real_time_alerting:
+        enabled: true
+        alert_channels:
+          - "slack"
+          - "email"
+          - "pagerduty"
+    
+    # API security
+    api_security:
+      # Rate limiting
+      rate_limiting:
+        enabled: true
+        
+        limits:
+          - endpoint: "/api/v1/generate"
+            limit: "100 requests per minute per user"
+            burst: 20
+          
+          - endpoint: "/api/v1/models"
+            limit: "1000 requests per hour per user"
+            burst: 50
+          
+          - endpoint: "global"
+            limit: "10000 requests per minute"
+            burst: 1000
+      
+      # Input validation
+      input_validation:
+        enabled: true
+        
+        validation_rules:
+          - field: "prompt"
+            max_length: 10000
+            allowed_characters: "alphanumeric + punctuation"
+            sanitization: true
+          
+          - field: "model_name"
+            pattern: "^[a-zA-Z0-9_-]+$"
+            max_length: 100
+          
+          - field: "parameters"
+            type: "json"
+            schema_validation: true
+      
+      # Output sanitization
+      output_sanitization:
+        enabled: true
+        
+        sanitization_rules:
+          - "remove_pii"
+          - "escape_html"
+          - "validate_json"
+          - "check_content_policy"
+
+# Data Security
+data_security:
+  # Data classification
+  data_classification:
+    enabled: true
+    
+    # Classification levels
+    levels:
+      - name: "public"
+        description: "Information that can be freely shared"
+        handling: "standard"
+      
+      - name: "internal"
+        description: "Information for internal use only"
+        handling: "restricted_sharing"
+      
+      - name: "confidential"
+        description: "Sensitive business information"
+        handling: "need_to_know"
+      
+      - name: "restricted"
+        description: "Highly sensitive information"
+        handling: "executive_approval"
+    
+    # Auto-classification
+    auto_classification:
+      enabled: true
+      
+      rules:
+        - pattern: "credit_card_number"
+          classification: "restricted"
+        
+        - pattern: "social_security_number"
+          classification: "restricted"
+        
+        - pattern: "email_address"
+          classification: "confidential"
+        
+        - pattern: "phone_number"
+          classification: "confidential"
+  
+  # Data Loss Prevention
+  dlp:
+    enabled: true
+    
+    # Detection rules
+    detection_rules:
+      - name: "credit_card_detection"
+        pattern: "\\b(?:\\d{4}[- ]?){3}\\d{4}\\b"
+        action: "block"
+        sensitivity: "high"
+      
+      - name: "ssn_detection"
+        pattern: "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+        action: "block"
+        sensitivity: "high"
+      
+      - name: "email_detection"
+        pattern: "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b"
+        action: "alert"
+        sensitivity: "medium"
+    
+    # Response actions
+    response_actions:
+      block:
+        - "prevent_data_transmission"
+        - "log_incident"
+        - "notify_security_team"
+      
+      alert:
+        - "log_incident"
+        - "notify_data_owner"
+      
+      quarantine:
+        - "isolate_data"
+        - "prevent_access"
+        - "notify_security_team"
+  
+  # Privacy protection
+  privacy_protection:
+    # PII detection
+    pii_detection:
+      enabled: true
+      
+      detection_types:
+        - "names"
+        - "addresses"
+        - "phone_numbers"
+        - "email_addresses"
+        - "credit_card_numbers"
+        - "social_security_numbers"
+        - "passport_numbers"
+        - "driver_license_numbers"
+      
+      # Machine learning based detection
+      ml_detection:
+        enabled: true
+        model: "spacy_ner"
+        confidence_threshold: 0.8
+    
+    # Data anonymization
+    anonymization:
+      enabled: true
+      
+      techniques:
+        - "tokenization"
+        - "pseudonymization"
+        - "masking"
+        - "generalization"
+        - "suppression"
+      
+      # Anonymization rules
+      rules:
+        - field: "name"
+          technique: "pseudonymization"
+          preserve_format: true
+        
+        - field: "email"
+          technique: "masking"
+          mask_character: "*"
+          preserve_domain: false
+        
+        - field: "phone"
+          technique: "tokenization"
+          token_format: "PHONE_TOKEN_###"
+
+# Incident Response
+incident_response:
+  # Incident classification
+  classification:
+    severity_levels:
+      - level: "critical"
+        description: "Immediate threat to business operations"
+        response_time: "15 minutes"
+        escalation: "C-level executives"
+      
+      - level: "high"
+        description: "Significant security risk"
+        response_time: "1 hour"
+        escalation: "Security team lead"
+      
+      - level: "medium"
+        description: "Moderate security concern"
+        response_time: "4 hours"
+        escalation: "Security analyst"
+      
+      - level: "low"
+        description: "Minor security issue"
+        response_time: "24 hours"
+        escalation: "IT support"
+    
+    # Incident types
+    types:
+      - "data_breach"
+      - "malware_infection"
+      - "unauthorized_access"
+      - "denial_of_service"
+      - "insider_threat"
+      - "compliance_violation"
+      - "system_compromise"
+  
+  # Response procedures
+  response_procedures:
+    # Incident response team
+    team:
+      - role: "incident_commander"
+        primary: "security_team_lead"
+        backup: "ciso"
+      
+      - role: "technical_lead"
+        primary: "senior_security_engineer"
+        backup: "devops_lead"
+      
+      - role: "communications_lead"
+        primary: "ciso"
+        backup: "legal_counsel"
+      
+      - role: "legal_counsel"
+        primary: "corporate_attorney"
+        backup: "external_counsel"
+    
+    # Response phases
+    phases:
+      1_preparation:
+        activities:
+          - "maintain_incident_response_plan"
+          - "train_response_team"
+          - "test_response_procedures"
+          - "maintain_contact_lists"
+      
+      2_identification:
+        activities:
+          - "detect_security_event"
+          - "analyze_event_severity"
+          - "classify_incident"
+          - "activate_response_team"
+      
+      3_containment:
+        activities:
+          - "isolate_affected_systems"
+          - "prevent_further_damage"
+          - "preserve_evidence"
+          - "implement_temporary_fixes"
+      
+      4_eradication:
+        activities:
+          - "remove_threat"
+          - "patch_vulnerabilities"
+          - "update_security_controls"
+          - "strengthen_defenses"
+      
+      5_recovery:
+        activities:
+          - "restore_systems"
+          - "validate_security"
+          - "monitor_for_reoccurrence"
+          - "return_to_normal_operations"
+      
+      6_lessons_learned:
+        activities:
+          - "conduct_post_incident_review"
+          - "update_procedures"
+          - "improve_security_controls"
+          - "share_lessons_learned"
+  
+  # Communication plan
+  communication_plan:
+    # Internal communications
+    internal:
+      - audience: "executive_team"
+        frequency: "immediate + daily updates"
+        method: "phone + email"
+      
+      - audience: "it_team"
+        frequency: "real_time"
+        method: "slack + phone"
+      
+      - audience: "all_employees"
+        frequency: "as_needed"
+        method: "email + intranet"
+    
+    # External communications
+    external:
+      - audience: "customers"
+        frequency: "within_72_hours"
+        method: "email + website"
+        approval_required: true
+      
+      - audience: "regulators"
+        frequency: "within_72_hours"
+        method: "official_notification"
+        approval_required: true
+      
+      - audience: "media"
+        frequency: "as_needed"
+        method: "press_release"
+        approval_required: true
+
+# Compliance and Auditing
+compliance_auditing:
+  # Audit logging
+  audit_logging:
+    enabled: true
+    
+    # Log categories
+    categories:
+      - "authentication_events"
+      - "authorization_events"
+      - "data_access_events"
+      - "configuration_changes"
+      - "privilege_changes"
+      - "system_events"
+      - "network_events"
+    
+    # Log retention
+    retention:
+      security_logs: "7 years"
+      audit_logs: "7 years"
+      access_logs: "2 years"
+      system_logs: "1 year"
+    
+    # Log integrity
+    integrity:
+      digital_signatures: true
+      tamper_detection: true
+      secure_storage: true
+      chain_of_custody: true
+  
+  # Compliance monitoring
+  compliance_monitoring:
+    enabled: true
+    
+    # Automated compliance checks
+    automated_checks:
+      - name: "password_policy_compliance"
+        frequency: "daily"
+        standard: "SOC2"
+      
+      - name: "encryption_compliance"
+        frequency: "weekly"
+        standard: "GDPR"
+      
+      - name: "access_review_compliance"
+        frequency: "monthly"
+        standard: "SOC2"
+      
+      - name: "vulnerability_management"
+        frequency: "weekly"
+        standard: "ISO27001"
+    
+    # Compliance reporting
+    reporting:
+      frequency: "quarterly"
+      
+      reports:
+        - "security_posture_assessment"
+        - "compliance_status_report"
+        - "risk_assessment_report"
+        - "incident_summary_report"
+  
+  # Third-party assessments
+  third_party_assessments:
+    penetration_testing:
+      frequency: "annually"
+      scope: "full_scope"
+      provider: "certified_ethical_hacker"
+    
+    vulnerability_assessments:
+      frequency: "quarterly"
+      scope: "infrastructure_and_applications"
+      provider: "security_vendor"
+    
+    compliance_audits:
+      soc2:
+        frequency: "annually"
+        auditor: "big_four_accounting_firm"
+      
+      iso27001:
+        frequency: "triannually"
+        auditor: "certified_iso_auditor"
+
+# Security Awareness and Training
+security_awareness:
+  # Training programs
+  training_programs:
+    - name: "security_awareness_basics"
+      audience: "all_employees"
+      frequency: "annually"
+      duration: "2 hours"
+      topics:
+        - "phishing_awareness"
+        - "password_security"
+        - "social_engineering"
+        - "data_protection"
+    
+    - name: "advanced_security_training"
+      audience: "technical_staff"
+      frequency: "bi_annually"
+      duration: "8 hours"
+      topics:
+        - "secure_coding_practices"
+        - "threat_modeling"
+        - "incident_response"
+        - "security_architecture"
+    
+    - name: "privacy_training"
+      audience: "data_handlers"
+      frequency: "annually"
+      duration: "3 hours"
+      topics:
+        - "gdpr_compliance"
+        - "data_minimization"
+        - "consent_management"
+        - "breach_notification"
+  
+  # Simulated attacks
+  simulated_attacks:
+    phishing_simulations:
+      frequency: "monthly"
+      difficulty: "progressive"
+      reporting: "department_level"
+      
+      remediation:
+        click_rate_threshold: 10
+        additional_training: true
+        manager_notification: true
+    
+    social_engineering_tests:
+      frequency: "quarterly"
+      methods:
+        - "phone_calls"
+        - "physical_access"
+        - "email_pretexting"
+
+# Performance and Monitoring
+security_monitoring:
+  # Security metrics
+  metrics:
+    - name: "mean_time_to_detection"
+      target: "< 15 minutes"
+      measurement: "automated_monitoring"
+    
+    - name: "mean_time_to_response"
+      target: "< 1 hour"
+      measurement: "incident_tracking"
+    
+    - name: "vulnerability_remediation_time"
+      target: "< 30 days"
+      measurement: "vulnerability_scanner"
+    
+    - name: "security_training_completion"
+      target: "100%"
+      measurement: "training_platform"
+  
+  # Dashboard and reporting
+  dashboards:
+    - name: "security_operations_center"
+      audience: "security_team"
+      refresh_rate: "real_time"
+      
+      widgets:
+        - "threat_detection_alerts"
+        - "vulnerability_status"
+        - "compliance_metrics"
+        - "incident_tracking"
+    
+    - name: "executive_security_dashboard"
+      audience: "executives"
+      refresh_rate: "daily"
+      
+      widgets:
+        - "security_posture_score"
+        - "compliance_status"
+        - "risk_trending"
+        - "incident_summary"

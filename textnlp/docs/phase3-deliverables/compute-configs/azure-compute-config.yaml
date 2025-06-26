@@ -1,0 +1,925 @@
+# Azure Compute Configuration for TextNLP Platform
+# Phase 3: Core Infrastructure Deployment
+
+apiVersion: v1
+kind: ComputeConfig
+metadata:
+  name: textnlp-azure-compute
+  version: "1.0"
+  environment: production
+  platform: azure
+
+# AKS Cluster Configuration
+aks_cluster:
+  name: "textnlp-production"
+  location: "eastus"
+  resource_group: "textnlp-prod-rg"
+  
+  # Cluster configuration
+  cluster_config:
+    kubernetes_version: "1.28.3"
+    dns_prefix: "textnlp-prod"
+    
+    # Network configuration
+    network_profile:
+      network_plugin: "azure"
+      network_policy: "azure"
+      service_cidr: "10.96.0.0/12"
+      dns_service_ip: "10.96.0.10"
+      pod_cidr: "10.244.0.0/16"
+      outbound_type: "loadBalancer"
+      
+      # Load balancer configuration
+      load_balancer_profile:
+        managed_outbound_ips:
+          count: 2
+        outbound_ip_prefixes: []
+        outbound_ips: []
+        idle_timeout_in_minutes: 30
+    
+    # Identity configuration
+    identity:
+      type: "SystemAssigned"
+    
+    # Workload Identity
+    oidc_issuer_profile:
+      enabled: true
+    
+    workload_identity_profile:
+      enabled: true
+    
+    # Private cluster configuration
+    api_server_access_profile:
+      enable_private_cluster: true
+      private_dns_zone: "system"
+      enable_private_cluster_public_fqdn: false
+      authorized_ip_ranges: 
+        - "203.0.113.0/24"  # Office network
+        - "10.0.0.0/8"      # VPN network
+    
+    # Add-ons
+    addon_profiles:
+      azure_policy:
+        enabled: true
+      azure_keyvault_secrets_provider:
+        enabled: true
+        config:
+          enable_secret_rotation: true
+          rotation_poll_interval: "2m"
+      monitoring:
+        enabled: true
+        log_analytics_workspace_resource_id: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg/providers/Microsoft.OperationalInsights/workspaces/textnlp-logs"
+      ingress_application_gateway:
+        enabled: true
+        config:
+          application_gateway_name: "textnlp-appgw"
+          subnet_cidr: "10.0.3.0/24"
+      open_service_mesh:
+        enabled: true
+        config: {}
+    
+    # Auto scaler profile
+    auto_scaler_profile:
+      balance_similar_node_groups: true
+      expander: "random"
+      max_empty_bulk_delete: "10"
+      max_graceful_termination_sec: "600"
+      max_node_provision_time: "15m"
+      max_total_unready_percentage: "45"
+      new_pod_scale_up_delay: "0s"
+      ok_total_unready_count: "3"
+      scale_down_delay_after_add: "10m"
+      scale_down_delay_after_delete: "10s"
+      scale_down_delay_after_failure: "3m"
+      scale_down_unneeded_time: "10m"
+      scale_down_utilization_threshold: "0.5"
+      scan_interval: "10s"
+      skip_nodes_with_local_storage: false
+      skip_nodes_with_system_pods: false
+    
+    # Windows profile (if Windows nodes needed)
+    windows_profile:
+      admin_username: "azureuser"
+      admin_password: null  # Will be auto-generated
+      enable_csi_proxy: true
+    
+    # HTTP application routing (disabled for production)
+    http_application_routing:
+      enabled: false
+    
+    # Maintenance window
+    maintenance_window:
+      allowed:
+        - day: "Sunday"
+          hours: [2, 3, 4, 5]  # 2-5 AM
+        - day: "Monday"
+          hours: [2, 3, 4, 5]  # 2-5 AM
+      not_allowed:
+        - start: "2024-12-25T00:00:00Z"
+          end: "2024-12-26T23:59:59Z"
+
+# Node Pool Configuration
+node_pools:
+  # Default system node pool
+  system_nodes:
+    name: "systempool"
+    mode: "System"
+    
+    # VM configuration
+    vm_size: "Standard_D4s_v3"  # 4 vCPU, 16 GB RAM
+    os_type: "Linux"
+    os_disk_size_gb: 128
+    os_disk_type: "Premium_LRS"
+    os_sku: "Ubuntu"
+    
+    # Scaling configuration
+    count: 3
+    min_count: 3
+    max_count: 10
+    enable_auto_scaling: true
+    
+    # Network configuration
+    vnet_subnet_id: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg/providers/Microsoft.Network/virtualNetworks/textnlp-vnet/subnets/aks-subnet"
+    enable_node_public_ip: false
+    
+    # Node configuration
+    max_pods: 110
+    
+    # Availability zones
+    availability_zones: ["1", "2", "3"]
+    
+    # Upgrade settings
+    upgrade_settings:
+      max_surge: "33%"
+    
+    # Labels
+    node_labels:
+      node-type: "system"
+      workload: "system"
+      platform: "azure"
+    
+    # Taints (system nodes should be tainted)
+    node_taints:
+      - "CriticalAddonsOnly=true:NoSchedule"
+
+  # CPU worker nodes
+  cpu_workers:
+    name: "cpuworkers"
+    mode: "User"
+    
+    # VM configuration
+    vm_size: "Standard_D8s_v3"  # 8 vCPU, 32 GB RAM
+    os_type: "Linux"
+    os_disk_size_gb: 128
+    os_disk_type: "Premium_LRS"
+    os_sku: "Ubuntu"
+    
+    # Scaling configuration
+    count: 3
+    min_count: 2
+    max_count: 20
+    enable_auto_scaling: true
+    
+    # Network configuration
+    vnet_subnet_id: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg/providers/Microsoft.Network/virtualNetworks/textnlp-vnet/subnets/aks-subnet"
+    enable_node_public_ip: false
+    
+    # Node configuration
+    max_pods: 110
+    
+    # Availability zones
+    availability_zones: ["1", "2", "3"]
+    
+    # Upgrade settings
+    upgrade_settings:
+      max_surge: "33%"
+    
+    # Labels
+    node_labels:
+      node-type: "cpu"
+      workload: "general"
+      platform: "azure"
+
+  # GPU inference nodes
+  gpu_inference_workers:
+    name: "gpuinference"
+    mode: "User"
+    
+    # VM configuration
+    vm_size: "Standard_NC4as_T4_v3"  # 4 vCPU, 28 GB RAM, 1x T4 GPU
+    os_type: "Linux"
+    os_disk_size_gb: 200
+    os_disk_type: "Premium_LRS"
+    os_sku: "Ubuntu"
+    
+    # Scaling configuration
+    count: 1
+    min_count: 0  # Scale to zero when not needed
+    max_count: 10
+    enable_auto_scaling: true
+    
+    # Spot configuration for cost optimization
+    priority: "Spot"
+    eviction_policy: "Delete"
+    spot_max_price: 0.5  # Maximum price per hour
+    
+    # Network configuration
+    vnet_subnet_id: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg/providers/Microsoft.Network/virtualNetworks/textnlp-vnet/subnets/gpu-subnet"
+    enable_node_public_ip: false
+    
+    # Node configuration
+    max_pods: 30  # Fewer pods for GPU nodes
+    
+    # Availability zones
+    availability_zones: ["1", "2", "3"]
+    
+    # Upgrade settings
+    upgrade_settings:
+      max_surge: "1"  # Conservative for GPU nodes
+    
+    # Labels
+    node_labels:
+      node-type: "gpu"
+      workload: "inference"
+      gpu-type: "nvidia-t4"
+      platform: "azure"
+    
+    # Taints
+    node_taints:
+      - "nvidia.com/gpu=true:NoSchedule"
+      - "inferloop.ai/gpu-inference=true:NoSchedule"
+
+  # GPU training nodes
+  gpu_training_workers:
+    name: "gputraining"
+    mode: "User"
+    
+    # VM configuration
+    vm_size: "Standard_NC24ads_A100_v4"  # 24 vCPU, 220 GB RAM, 1x A100 GPU
+    os_type: "Linux"
+    os_disk_size_gb: 500
+    os_disk_type: "Premium_LRS"
+    os_sku: "Ubuntu"
+    
+    # Scaling configuration
+    count: 0  # Start with zero nodes
+    min_count: 0
+    max_count: 5
+    enable_auto_scaling: true
+    
+    # Spot configuration for cost optimization
+    priority: "Spot"
+    eviction_policy: "Delete"
+    spot_max_price: 3.0  # Maximum price per hour for training
+    
+    # Network configuration
+    vnet_subnet_id: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg/providers/Microsoft.Network/virtualNetworks/textnlp-vnet/subnets/gpu-subnet"
+    enable_node_public_ip: false
+    
+    # Node configuration
+    max_pods: 10  # Very few pods for training nodes
+    
+    # Availability zones
+    availability_zones: ["1", "2", "3"]
+    
+    # Upgrade settings
+    upgrade_settings:
+      max_surge: "1"  # Very conservative for training nodes
+    
+    # Labels
+    node_labels:
+      node-type: "gpu"
+      workload: "training"
+      gpu-type: "nvidia-a100"
+      platform: "azure"
+    
+    # Taints
+    node_taints:
+      - "nvidia.com/gpu=true:NoSchedule"
+      - "inferloop.ai/gpu-training=true:NoSchedule"
+
+# Auto Scaling Configuration
+autoscaling:
+  # Cluster autoscaler
+  cluster_autoscaler:
+    enabled: true
+    
+    # Scaling behavior
+    scale_down_delay_after_add: "10m"
+    scale_down_unneeded_time: "10m"
+    scale_down_utilization_threshold: 0.5
+    
+    # GPU-specific scaling
+    gpu_scaling:
+      scale_up_threshold: 0.8
+      scale_down_threshold: 0.2
+      metrics:
+        - "gpu_utilization"
+        - "gpu_memory_utilization"
+        - "pending_pods"
+  
+  # Horizontal Pod Autoscaler
+  horizontal_pod_autoscaler:
+    enabled: true
+    
+    # Metrics server
+    metrics_server:
+      enabled: true
+      version: "v0.6.4"
+    
+    # Default HPA configuration
+    default_config:
+      cpu_utilization: 70
+      memory_utilization: 80
+      
+      # Scale behavior
+      behavior:
+        scale_up:
+          stabilization_window_seconds: 60
+          policies:
+            - type: "Pods"
+              value: 2
+              period_seconds: 60
+        scale_down:
+          stabilization_window_seconds: 300
+          policies:
+            - type: "Percent"
+              value: 10
+              period_seconds: 60
+  
+  # Vertical Pod Autoscaler
+  vertical_pod_autoscaler:
+    enabled: true
+    
+    # Addon configuration
+    addon_profile:
+      enabled: true
+      config:
+        recommender:
+          memory_aggregation_interval: "1m"
+          cpu_aggregation_interval: "1m"
+        updater:
+          min_replicas: 2
+          update_threshold: 0.1
+
+# GPU Configuration
+gpu_configuration:
+  # NVIDIA GPU Operator
+  nvidia_gpu_operator:
+    enabled: true
+    version: "23.9.1"
+    namespace: "gpu-operator"
+    
+    # Operator configuration
+    operator_config:
+      driver:
+        enabled: false  # AKS manages drivers
+      toolkit:
+        enabled: true
+        version: "1.14.3"
+      device_plugin:
+        enabled: false  # AKS has built-in device plugin
+      dcgm:
+        enabled: true
+      dcgm_exporter:
+        enabled: true
+        service_monitor:
+          enabled: true
+      gfd:  # GPU Feature Discovery
+        enabled: true
+      mig:  # Multi-Instance GPU
+        strategy: "single"
+      node_status_exporter:
+        enabled: true
+      validator:
+        plugin:
+          enabled: true
+        operator:
+          enabled: true
+      operator:
+        default_runtime: "containerd"
+  
+  # GPU device plugin
+  gpu_device_plugin:
+    enabled: true
+    image: "mcr.microsoft.com/oss/nvidia/k8s-device-plugin:v0.14.1"
+    
+    # Device plugin configuration
+    config:
+      sharing_strategy: "none"  # No sharing for production
+      migStrategy: "none"
+      failOnInitError: true
+      passDeviceSpecs: false
+      deviceListStrategy: "envvar"
+  
+  # GPU scheduling
+  gpu_scheduling:
+    # Node selector for GPU workloads
+    node_selector:
+      "kubernetes.azure.com/accelerator": "nvidia"
+    
+    # Tolerations for GPU taints
+    tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: "sku"
+        operator: "Equal"
+        value: "gpu"
+        effect: "NoSchedule"
+
+# Monitoring and Observability
+monitoring:
+  # Azure Monitor integration
+  azure_monitor:
+    enabled: true
+    
+    # Container insights
+    container_insights:
+      enabled: true
+      log_analytics_workspace_id: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg/providers/Microsoft.OperationalInsights/workspaces/textnlp-logs"
+      
+      # Data collection settings
+      data_collection:
+        stdout: true
+        stderr: true
+        environment_variables: true
+        
+        # Prometheus metrics scraping
+        prometheus_metrics:
+          enabled: true
+          scrape_configs:
+            - job_name: "gpu-metrics"
+              kubernetes_sd_configs:
+                - role: "pod"
+              relabel_configs:
+                - source_labels: ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+                  action: "keep"
+                  regex: "true"
+    
+    # Application insights
+    application_insights:
+      enabled: true
+      instrumentation_key: "INSTRUMENTATION_KEY"
+      
+      # Custom metrics
+      custom_metrics:
+        - name: "model_inference_latency"
+          description: "Model inference latency in milliseconds"
+        - name: "tokens_per_second"
+          description: "Token generation rate"
+        - name: "gpu_memory_efficiency"
+          description: "GPU memory utilization efficiency"
+  
+  # Prometheus integration
+  prometheus:
+    enabled: true
+    
+    # Prometheus operator
+    prometheus_operator:
+      enabled: true
+      version: "v0.68.0"
+    
+    # ServiceMonitors
+    service_monitors:
+      - name: "gpu-metrics"
+        selector:
+          matchLabels:
+            app: "dcgm-exporter"
+        endpoints:
+          - port: "metrics"
+            interval: "30s"
+            path: "/metrics"
+      
+      - name: "node-metrics"
+        selector:
+          matchLabels:
+            app: "node-exporter"
+        endpoints:
+          - port: "metrics"
+            interval: "30s"
+            path: "/metrics"
+  
+  # Grafana dashboards
+  grafana:
+    enabled: true
+    
+    # Dashboard configuration
+    dashboards:
+      - name: "aks-cluster-overview"
+        config_map: "aks-cluster-dashboard"
+      - name: "gpu-utilization"
+        config_map: "gpu-dashboard"
+      - name: "application-performance"
+        config_map: "app-dashboard"
+
+# Security Configuration
+security:
+  # Azure Active Directory integration
+  azure_ad_integration:
+    enabled: true
+    
+    # AAD configuration
+    aad_profile:
+      managed: true
+      enable_azure_rbac: true
+      admin_group_object_ids:
+        - "12345678-1234-1234-1234-123456789012"  # Platform Architects group
+      azure_rbac_enabled: true
+      tenant_id: "12345678-1234-1234-1234-123456789012"
+  
+  # Azure RBAC
+  azure_rbac:
+    enabled: true
+    
+    # Role assignments
+    role_assignments:
+      - principal_id: "12345678-1234-1234-1234-123456789012"
+        role_definition_id: "/subscriptions/12345678-1234-1234-1234-123456789012/providers/Microsoft.Authorization/roleDefinitions/b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b"  # Azure Kubernetes Service RBAC Cluster Admin
+        scope: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg/providers/Microsoft.ContainerService/managedClusters/textnlp-production"
+  
+  # Pod Security Standards
+  pod_security_standards:
+    enabled: true
+    
+    # Security policies
+    security_policies:
+      default_policy: "restricted"
+      
+      # Namespace policies
+      namespace_policies:
+        - namespace: "textnlp-api"
+          policy: "baseline"
+        - namespace: "textnlp-gpu"
+          policy: "restricted"
+        - namespace: "kube-system"
+          policy: "privileged"
+  
+  # Network security
+  network_security:
+    # Network policies
+    network_policies:
+      enabled: true
+      default_deny: true
+      
+      # Egress rules
+      egress_rules:
+        - to: []
+          ports:
+            - protocol: "TCP"
+              port: 53
+            - protocol: "UDP"
+              port: 53
+        - to:
+            - namespace_selector:
+                match_labels:
+                  name: "textnlp-api"
+          ports:
+            - protocol: "TCP"
+              port: 8080
+    
+    # Private endpoints
+    private_endpoints:
+      enabled: true
+      
+      # Key Vault private endpoint
+      key_vault:
+        enabled: true
+        subnet_id: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg/providers/Microsoft.Network/virtualNetworks/textnlp-vnet/subnets/private-endpoints"
+      
+      # Container Registry private endpoint
+      container_registry:
+        enabled: true
+        subnet_id: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg/providers/Microsoft.Network/virtualNetworks/textnlp-vnet/subnets/private-endpoints"
+  
+  # Azure Key Vault integration
+  key_vault_integration:
+    enabled: true
+    
+    # Key Vault configuration
+    key_vault:
+      name: "textnlp-kv"
+      resource_group: "textnlp-prod-rg"
+      
+      # CSI driver configuration
+      csi_driver:
+        enabled: true
+        version: "v1.4.2"
+        
+        # Secret provider classes
+        secret_provider_classes:
+          - name: "textnlp-secrets"
+            namespace: "textnlp-api"
+            spec:
+              provider: "azure"
+              parameters:
+                useVMManagedIdentity: "false"
+                userAssignedIdentityID: "12345678-1234-1234-1234-123456789012"
+                keyvaultName: "textnlp-kv"
+                objects: |
+                  array:
+                    - |
+                      objectName: api-secret
+                      objectType: secret
+                      objectVersion: ""
+                    - |
+                      objectName: db-password
+                      objectType: secret
+                      objectVersion: ""
+                tenantId: "12345678-1234-1234-1234-123456789012"
+
+# Cost Optimization
+cost_optimization:
+  # Spot instances
+  spot_instances:
+    enabled: true
+    max_spot_percentage: 80
+    
+    # Spot configuration
+    spot_configuration:
+      eviction_policy: "Delete"
+      max_price: -1  # Use current spot price
+      
+      # Node pool spot settings
+      node_pools:
+        - name: "gpuinference"
+          spot_max_price: 0.5
+        - name: "gputraining"
+          spot_max_price: 3.0
+  
+  # Reserved instances
+  reserved_instances:
+    enabled: true
+    
+    # Reservation scope
+    scope: "Single"  # Single subscription
+    
+    # Reserved capacity
+    reservations:
+      - vm_size: "Standard_D8s_v3"
+        quantity: 5
+        term: "P1Y"  # 1 year
+      - vm_size: "Standard_NC4as_T4_v3"
+        quantity: 2
+        term: "P1Y"  # 1 year
+  
+  # Azure Hybrid Benefit
+  azure_hybrid_benefit:
+    enabled: true
+    license_type: "Windows_Server"  # If using Windows nodes
+  
+  # Resource optimization
+  resource_optimization:
+    # Right-sizing
+    right_sizing:
+      enabled: true
+      analysis_period: "7d"
+      
+      # Thresholds
+      cpu_threshold: 20
+      memory_threshold: 20
+      
+      # Recommendations
+      auto_apply_recommendations: false
+      notification_webhook: "https://webhook.site/recommendation"
+    
+    # Scheduled scaling
+    scheduled_scaling:
+      enabled: true
+      timezone: "America/New_York"
+      
+      # Business hours scaling
+      business_hours:
+        scale_up:
+          schedule: "0 8 * * 1-5"  # 8 AM weekdays
+          min_count: 3
+        scale_down:
+          schedule: "0 18 * * 1-5"  # 6 PM weekdays
+          min_count: 1
+      
+      # Weekend scaling
+      weekend:
+        scale_down:
+          schedule: "0 20 * * 5"  # 8 PM Friday
+          min_count: 1
+        scale_up:
+          schedule: "0 8 * * 1"   # 8 AM Monday
+          min_count: 2
+
+# Disaster Recovery
+disaster_recovery:
+  # Multi-region deployment
+  multi_region:
+    enabled: true
+    
+    # Primary region
+    primary_region: "eastus"
+    
+    # Secondary regions
+    secondary_regions:
+      - "westus2"
+      - "northeurope"
+    
+    # Replication strategy
+    replication_strategy: "async"
+    recovery_time_objective: "4h"
+    recovery_point_objective: "1h"
+  
+  # Backup configuration
+  backup:
+    # Azure Backup
+    azure_backup:
+      enabled: true
+      backup_vault: "textnlp-backup-vault"
+      
+      # Backup policies
+      backup_policies:
+        - name: "daily-backup"
+          schedule: "0 2 * * *"  # Daily at 2 AM
+          retention_days: 30
+        - name: "weekly-backup"
+          schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM
+          retention_weeks: 12
+    
+    # Persistent volume snapshots
+    pv_snapshots:
+      enabled: true
+      schedule: "0 3 * * *"  # Daily at 3 AM
+      retention_days: 30
+      
+      # Cross-region snapshots
+      cross_region: true
+      target_regions:
+        - "westus2"
+        - "northeurope"
+  
+  # Cluster restore
+  cluster_restore:
+    # Automated restore
+    automated_restore:
+      enabled: false  # Manual approval required
+      
+      # Trigger conditions
+      trigger_conditions:
+        - "cluster_unavailable > 30m"
+        - "node_failure_rate > 50%"
+    
+    # Manual restore procedures
+    manual_restore:
+      runbooks:
+        - "docs/runbooks/aks-cluster-restore.md"
+        - "docs/runbooks/azure-backup-restore.md"
+
+# Performance Optimization
+performance_optimization:
+  # Node performance tuning
+  node_tuning:
+    # VM extensions
+    vm_extensions:
+      - name: "CustomScript"
+        publisher: "Microsoft.Azure.Extensions"
+        type: "CustomScript"
+        type_handler_version: "2.1"
+        settings:
+          commandToExecute: |
+            #!/bin/bash
+            # Performance optimizations
+            echo 'vm.max_map_count=262144' >> /etc/sysctl.conf
+            echo 'fs.file-max=2097152' >> /etc/sysctl.conf
+            sysctl -p
+            
+            # GPU optimizations (for GPU nodes)
+            if command -v nvidia-smi &> /dev/null; then
+              nvidia-persistenced --persistence-mode
+              nvidia-smi -pm 1
+            fi
+    
+    # Accelerated networking
+    accelerated_networking:
+      enabled: true
+    
+    # Premium storage
+    premium_storage:
+      enabled: true
+      disk_type: "Premium_LRS"
+  
+  # Container optimization
+  container_optimization:
+    # Container runtime
+    container_runtime: "containerd"
+    
+    # Runtime configuration
+    runtime_config:
+      max_container_log_line_size: 16384
+      systemd_cgroup: true
+      
+      # Registry configuration
+      registry:
+        mirrors:
+          "docker.io":
+            endpoint: ["https://textnlpacr.azurecr.io"]
+        
+        configs:
+          "textnlpacr.azurecr.io":
+            auth:
+              username: "textnlpacr"
+              password: "ACR_PASSWORD"
+  
+  # GPU optimization
+  gpu_optimization:
+    # CUDA optimization
+    cuda_optimization:
+      cuda_version: "11.8"
+      cudnn_version: "8.7"
+      
+      # Performance settings
+      nvidia_settings:
+        persistence_mode: true
+        power_management: "default"
+        compute_mode: "DEFAULT"
+    
+    # Model optimization
+    model_optimization:
+      # Quantization
+      quantization:
+        enabled: true
+        methods: ["int8", "fp16"]
+      
+      # Model parallelism
+      parallelism:
+        data_parallel: true
+        model_parallel: false
+        pipeline_parallel: false
+
+# Validation and Testing
+validation:
+  # Health checks
+  health_checks:
+    cluster_health:
+      enabled: true
+      check_interval: "60s"
+      timeout: "30s"
+      
+      # Azure-specific health checks
+      azure_checks:
+        - "resource_group_health"
+        - "load_balancer_health"
+        - "network_security_group_health"
+        - "key_vault_connectivity"
+    
+    node_health:
+      enabled: true
+      check_interval: "30s"
+      timeout: "10s"
+      
+      # Node conditions
+      conditions:
+        - "Ready"
+        - "MemoryPressure"
+        - "DiskPressure"
+        - "PIDPressure"
+        - "NetworkUnavailable"
+    
+    gpu_health:
+      enabled: true
+      check_interval: "60s"
+      timeout: "30s"
+      
+      # GPU-specific checks
+      gpu_checks:
+        - "nvidia_driver_version"
+        - "cuda_runtime_version"
+        - "gpu_temperature"
+        - "gpu_power_state"
+  
+  # Performance testing
+  performance_testing:
+    # Load testing with Azure Load Testing
+    azure_load_testing:
+      enabled: true
+      test_plan_resource_id: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg/providers/Microsoft.LoadTestService/loadtests/textnlp-loadtest"
+      
+      # Test scenarios
+      test_scenarios:
+        - name: "api_load_test"
+          duration: "10m"
+          virtual_users: 100
+          target_endpoint: "https://api.textnlp.com"
+        
+        - name: "gpu_inference_test"
+          duration: "10m"
+          concurrent_requests: 50
+          model: "gpt2-large"
+    
+    # Chaos engineering
+    chaos_engineering:
+      enabled: false  # Enable after stable operation
+      
+      # Chaos experiments
+      experiments:
+        - name: "node_failure"
+          frequency: "weekly"
+          scope: "single_node"
+        - name: "network_partition"
+          frequency: "monthly"
+          scope: "single_zone"

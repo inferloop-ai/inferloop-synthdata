@@ -1,0 +1,723 @@
+# Azure Network Configuration for TextNLP Platform
+# Phase 2: Foundation Setup
+
+apiVersion: v1
+kind: AzureNetworkConfig
+metadata:
+  name: textnlp-azure-network
+  subscription: "12345678-1234-1234-1234-123456789012"
+  resource_group: textnlp-prod-rg
+  location: eastus
+  environment: production
+
+# Virtual Network
+virtual_network:
+  name: "textnlp-vnet"
+  address_space:
+    - "10.2.0.0/16"
+  location: "eastus"
+  
+  tags:
+    Project: "TextNLP"
+    Environment: "Production"
+    ManagedBy: "TextNLP-Platform"
+    CostCenter: "AI-ML"
+
+# Subnets
+subnets:
+  # Application subnet
+  application:
+    name: "textnlp-app-subnet"
+    address_prefix: "10.2.1.0/24"
+    
+    # Service endpoints
+    service_endpoints:
+      - "Microsoft.Storage"
+      - "Microsoft.Sql"
+      - "Microsoft.KeyVault"
+      - "Microsoft.CognitiveServices"
+    
+    # Delegations for ACI and other services
+    delegations:
+      - name: "Microsoft.ContainerInstance/containerGroups"
+        service_name: "Microsoft.ContainerInstance/containerGroups"
+  
+  # GPU subnet for ML workloads
+  gpu:
+    name: "textnlp-gpu-subnet"
+    address_prefix: "10.2.2.0/24"
+    
+    service_endpoints:
+      - "Microsoft.Storage"
+      - "Microsoft.ContainerRegistry"
+    
+    # Private endpoints for GPU workloads
+    private_endpoint_network_policies_enabled: false
+  
+  # Database subnet
+  database:
+    name: "textnlp-db-subnet"
+    address_prefix: "10.2.3.0/24"
+    
+    service_endpoints:
+      - "Microsoft.Sql"
+    
+    delegations:
+      - name: "Microsoft.DBforPostgreSQL/flexibleServers"
+        service_name: "Microsoft.DBforPostgreSQL/flexibleServers"
+  
+  # AKS subnet
+  aks:
+    name: "textnlp-aks-subnet"
+    address_prefix: "10.2.10.0/23"  # Larger subnet for AKS
+    
+    service_endpoints:
+      - "Microsoft.Storage"
+      - "Microsoft.ContainerRegistry"
+  
+  # Management subnet
+  management:
+    name: "textnlp-mgmt-subnet"
+    address_prefix: "10.2.4.0/24"
+    
+    service_endpoints:
+      - "Microsoft.Storage"
+      - "Microsoft.KeyVault"
+      - "Microsoft.Monitoring"
+  
+  # Gateway subnet for VPN/ExpressRoute
+  gateway:
+    name: "GatewaySubnet"  # Must be exactly this name
+    address_prefix: "10.2.5.0/27"
+
+# Network Security Groups
+network_security_groups:
+  application:
+    name: "textnlp-app-nsg"
+    location: "eastus"
+    
+    security_rules:
+      - name: "AllowLoadBalancerInbound"
+        priority: 100
+        direction: "Inbound"
+        access: "Allow"
+        protocol: "Tcp"
+        source_port_range: "*"
+        destination_port_ranges: ["80", "443", "8000"]
+        source_address_prefix: "AzureLoadBalancer"
+        destination_address_prefix: "*"
+      
+      - name: "AllowVNetInbound"
+        priority: 110
+        direction: "Inbound"
+        access: "Allow"
+        protocol: "Tcp"
+        source_port_range: "*"
+        destination_port_ranges: ["22", "3389", "8000"]
+        source_address_prefix: "VirtualNetwork"
+        destination_address_prefix: "VirtualNetwork"
+      
+      - name: "AllowHTTPSOutbound"
+        priority: 100
+        direction: "Outbound"
+        access: "Allow"
+        protocol: "Tcp"
+        source_port_range: "*"
+        destination_port_ranges: ["443", "80"]
+        source_address_prefix: "*"
+        destination_address_prefix: "Internet"
+      
+      - name: "AllowVNetOutbound"
+        priority: 110
+        direction: "Outbound"
+        access: "Allow"
+        protocol: "*"
+        source_port_range: "*"
+        destination_port_range: "*"
+        source_address_prefix: "VirtualNetwork"
+        destination_address_prefix: "VirtualNetwork"
+      
+      - name: "DenyAllInbound"
+        priority: 4000
+        direction: "Inbound"
+        access: "Deny"
+        protocol: "*"
+        source_port_range: "*"
+        destination_port_range: "*"
+        source_address_prefix: "*"
+        destination_address_prefix: "*"
+  
+  gpu:
+    name: "textnlp-gpu-nsg"
+    location: "eastus"
+    
+    security_rules:
+      - name: "AllowApplicationToGPU"
+        priority: 100
+        direction: "Inbound"
+        access: "Allow"
+        protocol: "Tcp"
+        source_port_range: "*"
+        destination_port_ranges: ["8080", "50051"]
+        source_address_prefix: "10.2.1.0/24"  # App subnet
+        destination_address_prefix: "*"
+      
+      - name: "AllowSSHFromManagement"
+        priority: 110
+        direction: "Inbound"
+        access: "Allow"
+        protocol: "Tcp"
+        source_port_range: "*"
+        destination_port_range: "22"
+        source_address_prefix: "10.2.4.0/24"  # Mgmt subnet
+        destination_address_prefix: "*"
+      
+      - name: "AllowInternetOutbound"
+        priority: 100
+        direction: "Outbound"
+        access: "Allow"
+        protocol: "*"
+        source_port_range: "*"
+        destination_port_range: "*"
+        source_address_prefix: "*"
+        destination_address_prefix: "Internet"
+  
+  database:
+    name: "textnlp-db-nsg"
+    location: "eastus"
+    
+    security_rules:
+      - name: "AllowPostgreSQL"
+        priority: 100
+        direction: "Inbound"
+        access: "Allow"
+        protocol: "Tcp"
+        source_port_range: "*"
+        destination_port_range: "5432"
+        source_address_prefixes: ["10.2.1.0/24", "10.2.2.0/24"]  # App and GPU subnets
+        destination_address_prefix: "*"
+      
+      - name: "AllowRedis"
+        priority: 110
+        direction: "Inbound"
+        access: "Allow"
+        protocol: "Tcp"
+        source_port_range: "*"
+        destination_port_range: "6379"
+        source_address_prefixes: ["10.2.1.0/24", "10.2.2.0/24"]
+        destination_address_prefix: "*"
+      
+      - name: "DenyInternetOutbound"
+        priority: 100
+        direction: "Outbound"
+        access: "Deny"
+        protocol: "*"
+        source_port_range: "*"
+        destination_port_range: "*"
+        source_address_prefix: "*"
+        destination_address_prefix: "Internet"
+  
+  aks:
+    name: "textnlp-aks-nsg"
+    location: "eastus"
+    
+    security_rules:
+      - name: "AllowKubernetesAPI"
+        priority: 100
+        direction: "Inbound"
+        access: "Allow"
+        protocol: "Tcp"
+        source_port_range: "*"
+        destination_port_range: "443"
+        source_address_prefix: "Internet"  # API server needs internet access
+        destination_address_prefix: "*"
+      
+      - name: "AllowNodeCommunication"
+        priority: 110
+        direction: "Inbound"
+        access: "Allow"
+        protocol: "*"
+        source_port_range: "*"
+        destination_port_range: "*"
+        source_address_prefix: "10.2.10.0/23"
+        destination_address_prefix: "10.2.10.0/23"
+
+# Route Tables
+route_tables:
+  application:
+    name: "textnlp-app-rt"
+    location: "eastus"
+    
+    routes:
+      - name: "InternetRoute"
+        address_prefix: "0.0.0.0/0"
+        next_hop_type: "Internet"
+      
+      - name: "DatabaseRoute"
+        address_prefix: "10.2.3.0/24"
+        next_hop_type: "VnetLocal"
+  
+  gpu:
+    name: "textnlp-gpu-rt"
+    location: "eastus"
+    
+    routes:
+      - name: "InternetRoute"
+        address_prefix: "0.0.0.0/0"
+        next_hop_type: "Internet"
+      
+      - name: "ApplicationRoute"
+        address_prefix: "10.2.1.0/24"
+        next_hop_type: "VnetLocal"
+
+# Load Balancer
+load_balancer:
+  # Application Gateway for advanced features
+  application_gateway:
+    name: "textnlp-appgw"
+    location: "eastus"
+    sku:
+      name: "WAF_v2"
+      tier: "WAF_v2"
+      capacity: 2
+    
+    # Public IP for Application Gateway
+    public_ip:
+      name: "textnlp-appgw-pip"
+      allocation_method: "Static"
+      sku: "Standard"
+      domain_name_label: "textnlp-api"
+    
+    # Gateway IP configuration
+    gateway_ip_configuration:
+      name: "textnlp-appgw-ip-config"
+      subnet_id: "application"  # Reference to app subnet
+    
+    # Frontend configurations
+    frontend_ip_configurations:
+      - name: "textnlp-appgw-frontend-ip"
+        public_ip_address_id: "textnlp-appgw-pip"
+    
+    # Frontend ports
+    frontend_ports:
+      - name: "port_80"
+        port: 80
+      - name: "port_443"
+        port: 443
+    
+    # Backend pools
+    backend_address_pools:
+      - name: "textnlp-api-pool"
+      - name: "textnlp-gpu-pool"
+    
+    # Backend HTTP settings
+    backend_http_settings:
+      - name: "textnlp-api-http-settings"
+        cookie_based_affinity: "Disabled"
+        port: 8000
+        protocol: "Http"
+        request_timeout: 30
+        
+        health_probe:
+          name: "textnlp-api-probe"
+          protocol: "Http"
+          path: "/health"
+          interval: 30
+          timeout: 5
+          unhealthy_threshold: 3
+      
+      - name: "textnlp-gpu-http-settings"
+        cookie_based_affinity: "Disabled"
+        port: 8080
+        protocol: "Http"
+        request_timeout: 180  # Longer timeout for GPU inference
+        
+        health_probe:
+          name: "textnlp-gpu-probe"
+          protocol: "Http"
+          path: "/health"
+          interval: 30
+          timeout: 10
+          unhealthy_threshold: 2
+    
+    # HTTP listeners
+    http_listeners:
+      - name: "textnlp-http-listener"
+        frontend_ip_configuration_name: "textnlp-appgw-frontend-ip"
+        frontend_port_name: "port_80"
+        protocol: "Http"
+      
+      - name: "textnlp-https-listener"
+        frontend_ip_configuration_name: "textnlp-appgw-frontend-ip"
+        frontend_port_name: "port_443"
+        protocol: "Https"
+        ssl_certificate_name: "textnlp-ssl-cert"
+    
+    # Request routing rules
+    request_routing_rules:
+      - name: "textnlp-http-rule"
+        rule_type: "Basic"
+        http_listener_name: "textnlp-http-listener"
+        backend_address_pool_name: "textnlp-api-pool"
+        backend_http_settings_name: "textnlp-api-http-settings"
+        priority: 100
+      
+      - name: "textnlp-https-rule"
+        rule_type: "PathBasedRouting"
+        http_listener_name: "textnlp-https-listener"
+        url_path_map_name: "textnlp-path-map"
+        priority: 200
+    
+    # URL path map for routing
+    url_path_maps:
+      - name: "textnlp-path-map"
+        default_backend_address_pool_name: "textnlp-api-pool"
+        default_backend_http_settings_name: "textnlp-api-http-settings"
+        
+        path_rules:
+          - name: "gpu-path-rule"
+            paths: ["/api/v1/generate/*", "/api/v1/embed/*"]
+            backend_address_pool_name: "textnlp-gpu-pool"
+            backend_http_settings_name: "textnlp-gpu-http-settings"
+    
+    # SSL certificates
+    ssl_certificates:
+      - name: "textnlp-ssl-cert"
+        # Certificate will be managed by Key Vault
+        key_vault_secret_id: "https://textnlp-kv.vault.azure.net/secrets/ssl-cert"
+    
+    # WAF configuration
+    waf_configuration:
+      enabled: true
+      firewall_mode: "Prevention"
+      rule_set_type: "OWASP"
+      rule_set_version: "3.2"
+      
+      disabled_rule_groups: []
+      
+      request_body_check: true
+      max_request_body_size_in_kb: 128
+      file_upload_limit_in_mb: 100
+
+# Private Endpoints
+private_endpoints:
+  storage:
+    name: "textnlp-storage-pe"
+    location: "eastus"
+    subnet_id: "database"  # Database subnet
+    
+    private_service_connection:
+      name: "textnlp-storage-psc"
+      private_connection_resource_id: "storage_account_id"
+      subresource_names: ["blob"]
+      is_manual_connection: false
+    
+    private_dns_zone_group:
+      name: "textnlp-storage-dns-zone-group"
+      private_dns_zone_ids:
+        - "privatelink.blob.core.windows.net"
+  
+  key_vault:
+    name: "textnlp-kv-pe"
+    location: "eastus"
+    subnet_id: "management"
+    
+    private_service_connection:
+      name: "textnlp-kv-psc"
+      private_connection_resource_id: "key_vault_id"
+      subresource_names: ["vault"]
+      is_manual_connection: false
+  
+  container_registry:
+    name: "textnlp-acr-pe"
+    location: "eastus"
+    subnet_id: "aks"
+    
+    private_service_connection:
+      name: "textnlp-acr-psc"
+      private_connection_resource_id: "container_registry_id"
+      subresource_names: ["registry"]
+      is_manual_connection: false
+
+# Private DNS Zones
+private_dns_zones:
+  blob_storage:
+    name: "privatelink.blob.core.windows.net"
+    
+    virtual_network_links:
+      - name: "textnlp-vnet-link"
+        virtual_network_id: "textnlp-vnet"
+        registration_enabled: false
+  
+  key_vault:
+    name: "privatelink.vaultcore.azure.net"
+    
+    virtual_network_links:
+      - name: "textnlp-vnet-link"
+        virtual_network_id: "textnlp-vnet"
+        registration_enabled: false
+  
+  container_registry:
+    name: "privatelink.azurecr.io"
+    
+    virtual_network_links:
+      - name: "textnlp-vnet-link"
+        virtual_network_id: "textnlp-vnet"
+        registration_enabled: false
+  
+  postgres:
+    name: "privatelink.postgres.database.azure.com"
+    
+    virtual_network_links:
+      - name: "textnlp-vnet-link"
+        virtual_network_id: "textnlp-vnet"
+        registration_enabled: false
+
+# NAT Gateway
+nat_gateway:
+  name: "textnlp-nat"
+  location: "eastus"
+  sku_name: "Standard"
+  idle_timeout_in_minutes: 10
+  
+  # Public IP for NAT Gateway
+  public_ip:
+    name: "textnlp-nat-pip"
+    allocation_method: "Static"
+    sku: "Standard"
+
+# Azure Firewall (optional - for hub-spoke architecture)
+azure_firewall:
+  enabled: false  # Enable for enterprise hub-spoke model
+  name: "textnlp-fw"
+  location: "eastus"
+  sku_name: "AZFW_VNet"
+  sku_tier: "Standard"
+  
+  # Firewall subnet (requires /26 or larger)
+  firewall_subnet:
+    name: "AzureFirewallSubnet"  # Must be exactly this name
+    address_prefix: "10.2.6.0/26"
+  
+  # Public IP for firewall
+  public_ip:
+    name: "textnlp-fw-pip"
+    allocation_method: "Static"
+    sku: "Standard"
+
+# VPN Gateway (for hybrid connectivity)
+vpn_gateway:
+  enabled: false  # Enable for on-premises connectivity
+  name: "textnlp-vpn-gw"
+  location: "eastus"
+  type: "Vpn"
+  vpn_type: "RouteBased"
+  
+  sku: "VpnGw2"  # Supports up to 1.25 Gbps
+  generation: "Generation2"
+  
+  # Public IP for VPN Gateway
+  public_ip:
+    name: "textnlp-vpn-pip"
+    allocation_method: "Static"
+    sku: "Standard"
+
+# Network Watcher
+network_watcher:
+  name: "textnlp-nw"
+  location: "eastus"
+  
+  # Flow logs
+  flow_logs:
+    - name: "textnlp-app-flow-log"
+      network_security_group_id: "textnlp-app-nsg"
+      storage_account_id: "flow_logs_storage_account"
+      enabled: true
+      
+      retention_policy:
+        enabled: true
+        days: 30
+      
+      traffic_analytics:
+        enabled: true
+        workspace_id: "log_analytics_workspace_id"
+        workspace_region: "eastus"
+        workspace_resource_id: "log_analytics_workspace_resource_id"
+        interval_in_minutes: 10
+
+# Monitoring and Diagnostics
+monitoring:
+  # Diagnostic settings for VNet
+  vnet_diagnostics:
+    name: "textnlp-vnet-diagnostics"
+    target_resource_id: "textnlp-vnet"
+    
+    log_analytics_workspace_id: "log_analytics_workspace_id"
+    
+    enabled_log_categories:
+      - "VMProtectionAlerts"
+    
+    enabled_metrics:
+      - "AllMetrics"
+  
+  # Application Gateway diagnostics
+  appgw_diagnostics:
+    name: "textnlp-appgw-diagnostics"
+    target_resource_id: "textnlp-appgw"
+    
+    log_analytics_workspace_id: "log_analytics_workspace_id"
+    
+    enabled_log_categories:
+      - "ApplicationGatewayAccessLog"
+      - "ApplicationGatewayPerformanceLog"
+      - "ApplicationGatewayFirewallLog"
+    
+    enabled_metrics:
+      - "AllMetrics"
+
+# DDoS Protection
+ddos_protection_plan:
+  enabled: true
+  name: "textnlp-ddos-plan"
+  location: "eastus"
+
+# Cost Management
+cost_management:
+  # Scheduled shutdown for development resources
+  auto_shutdown:
+    enabled: true
+    time: "19:00"
+    timezone: "UTC"
+    notification_settings:
+      status: "Enabled"
+      time_in_minutes: 30
+      email_recipient: "devops@company.com"
+  
+  # Budget alerts
+  budget:
+    name: "textnlp-network-budget"
+    amount: 500
+    time_grain: "Monthly"
+    time_period:
+      start_date: "2024-01-01T00:00:00Z"
+      end_date: "2025-01-01T00:00:00Z"
+    
+    filter:
+      resource_groups: ["textnlp-prod-rg"]
+    
+    notifications:
+      - enabled: true
+        threshold: 80
+        operator: "GreaterThan"
+        contact_emails: ["finance@company.com", "devops@company.com"]
+      - enabled: true
+        threshold: 100
+        operator: "GreaterThan"
+        contact_emails: ["finance@company.com", "devops@company.com"]
+
+# Disaster Recovery
+disaster_recovery:
+  # Paired region for DR
+  paired_region: "westus2"
+  
+  # Site Recovery
+  recovery_services_vault:
+    name: "textnlp-rsv"
+    location: "eastus"
+    sku: "Standard"
+    
+    soft_delete_enabled: true
+    storage_mode_type: "GeoRedundant"
+  
+  # Cross-region VNet peering
+  cross_region_peering:
+    enabled: false  # Enable when DR region is ready
+    remote_vnet_name: "textnlp-dr-vnet"
+    remote_vnet_resource_group: "textnlp-dr-rg"
+    allow_virtual_network_access: true
+    allow_forwarded_traffic: false
+    allow_gateway_transit: false
+    use_remote_gateways: false
+
+# Security and Compliance
+security:
+  # Azure Security Center
+  security_center:
+    enabled: true
+    tier: "Standard"
+    
+    # Security contacts
+    security_contact:
+      email: "security@company.com"
+      phone: "+1-555-0123"
+      alert_notifications: true
+      alerts_to_admins: true
+  
+  # Azure Sentinel
+  sentinel:
+    enabled: false  # Enable for advanced security monitoring
+    workspace_id: "log_analytics_workspace_id"
+  
+  # Just-in-Time VM access
+  jit_access:
+    enabled: true
+    max_request_access_duration: "PT3H"  # 3 hours
+    
+    ports:
+      - number: 22
+        protocol: "TCP"
+        allowed_source_address_prefix: "company_ip_ranges"
+      - number: 3389
+        protocol: "TCP"
+        allowed_source_address_prefix: "company_ip_ranges"
+
+# Backup Strategy
+backup:
+  # Network configuration backup
+  configuration_backup:
+    enabled: true
+    schedule: "daily"
+    retention_days: 30
+    
+    backup_items:
+      - "Virtual Network configuration"
+      - "Network Security Groups"
+      - "Route Tables"
+      - "Private DNS Zones"
+      - "Application Gateway configuration"
+
+# Deployment Configuration
+deployment:
+  # Terraform state storage
+  terraform_backend:
+    storage_account_name: "textnlpterraformstate"
+    container_name: "tfstate"
+    key: "network.tfstate"
+    resource_group_name: "textnlp-state-rg"
+  
+  # ARM template deployment
+  arm_deployment:
+    template_file: "azuredeploy.json"
+    parameters_file: "azuredeploy.parameters.json"
+    deployment_mode: "Incremental"
+  
+  # Deployment order
+  deployment_order:
+    1. "Resource Group and VNet"
+    2. "Subnets and NSGs"
+    3. "Route Tables"
+    4. "NAT Gateway"
+    5. "Application Gateway"
+    6. "Private Endpoints"
+    7. "Private DNS Zones"
+    8. "Monitoring and Diagnostics"
+    9. "Security configurations"
+  
+  # Validation tests
+  validation_tests:
+    - "VNet connectivity test"
+    - "NSG rule validation"
+    - "Application Gateway health check"
+    - "Private endpoint connectivity"
+    - "DNS resolution test"
+    - "Monitoring data flow test"

@@ -1,0 +1,205 @@
+apiVersion: inferloop.io/v1
+kind: ServiceDeployment
+metadata:
+  name: tabular
+  namespace: inferloop
+  labels:
+    app: tabular
+    version: v1.0.0
+spec:
+  service:
+    type: api
+    description: "Enterprise-grade synthetic tabular data generation service"
+    image: inferloop/tabular:latest
+    port: 8000
+    
+  deployment:
+    replicas:
+      min: 2
+      max: 50
+    strategy: 
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 25%
+        maxUnavailable: 0
+    
+  tiers:
+    starter:
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "1Gi"
+        limits:
+          cpu: "1"
+          memory: "2Gi"
+      features:
+        algorithms: ["sdv"]
+        max_rows: 100000
+        rate_limit: 100/hour
+        
+    professional:
+      resources:
+        requests:
+          cpu: "1"
+          memory: "2Gi"
+        limits:
+          cpu: "2"
+          memory: "4Gi"
+      features:
+        algorithms: ["sdv", "ctgan", "ydata"]
+        max_rows: 1000000
+        rate_limit: 1000/hour
+        
+    business:
+      resources:
+        requests:
+          cpu: "2"
+          memory: "4Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+      features:
+        algorithms: ["sdv", "ctgan", "ydata", "custom"]
+        max_rows: 5000000
+        rate_limit: 10000/hour
+        
+    enterprise:
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+      features:
+        algorithms: ["all"]
+        max_rows: -1  # unlimited
+        rate_limit: -1  # unlimited
+        
+  integrations:
+    database:
+      type: postgres
+      schema: tabular
+      pool:
+        min: 5
+        max: 20
+      migrations:
+        enabled: true
+        path: /migrations
+        
+    cache:
+      type: redis
+      namespace: "tabular"
+      ttl:
+        default: 3600
+        results: 86400
+        
+    storage:
+      type: unified
+      buckets:
+        - name: input
+          retention: 30d
+        - name: output
+          retention: 90d
+        - name: models
+          retention: -1
+          
+    messaging:
+      type: unified
+      queues:
+        - name: generation-queue
+          max_size: 10000
+        - name: validation-queue
+          max_size: 5000
+          
+  api:
+    endpoints:
+      - path: /generate
+        method: POST
+        timeout: 300s
+        billing:
+          metric: rows_generated
+          
+      - path: /validate
+        method: POST
+        timeout: 60s
+        billing:
+          metric: validations_performed
+          
+      - path: /algorithms
+        method: GET
+        cache: 3600s
+        public: true
+        
+      - path: /usage
+        method: GET
+        tier_required: professional
+        
+  monitoring:
+    metrics:
+      enabled: true
+      port: 9090
+      path: /metrics
+      custom:
+        - name: tabular_rows_generated_total
+          type: counter
+        - name: tabular_generation_duration_seconds
+          type: histogram
+        - name: tabular_algorithm_usage
+          type: counter
+          
+    logging:
+      level: INFO
+      format: json
+      outputs:
+        - stdout
+        - unified-logging
+        
+    tracing:
+      enabled: true
+      sample_rate: 0.1
+      exporter: unified-tracing
+      
+    alerts:
+      - name: HighErrorRate
+        condition: "error_rate > 0.05"
+        severity: warning
+        
+      - name: HighLatency
+        condition: "p95_latency > 30s"
+        severity: warning
+        
+      - name: LowAvailability
+        condition: "availability < 0.995"
+        severity: critical
+        
+  security:
+    authentication:
+      type: unified-auth
+      required: true
+      
+    authorization:
+      model: RBAC
+      permissions:
+        - tabular:read
+        - tabular:generate
+        - tabular:validate
+        - tabular:admin
+        
+    encryption:
+      at_rest: true
+      in_transit: true
+      key_rotation: 90d
+      
+  healthchecks:
+    liveness:
+      path: /health
+      interval: 30s
+      timeout: 5s
+      failures: 3
+      
+    readiness:
+      path: /ready
+      interval: 5s
+      timeout: 3s
+      failures: 2

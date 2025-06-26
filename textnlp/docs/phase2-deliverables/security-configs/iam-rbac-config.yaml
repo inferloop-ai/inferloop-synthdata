@@ -1,0 +1,982 @@
+# IAM and RBAC Configuration for TextNLP Platform
+# Phase 2: Foundation Setup
+
+apiVersion: v1
+kind: IAMRBACConfig
+metadata:
+  name: textnlp-iam-rbac
+  version: "1.0"
+  environment: production
+
+# AWS IAM Configuration
+aws_iam:
+  # IAM Policies
+  policies:
+    # Platform Administrator Policy
+    platform_admin_policy:
+      name: "TextNLP-Platform-Admin-Policy"
+      version: "2012-10-17"
+      statement:
+        - effect: "Allow"
+          action: "*"
+          resource: "*"
+        
+        # Explicit denials for security
+        - effect: "Deny"
+          action:
+            - "iam:DeleteRole"
+            - "iam:DeleteUser"
+            - "iam:DeletePolicy"
+          resource: "*"
+          condition:
+            StringNotEquals:
+              "aws:RequestedRegion": ["us-east-1", "us-west-2"]
+    
+    # DevOps Engineer Policy
+    devops_engineer_policy:
+      name: "TextNLP-DevOps-Engineer-Policy"
+      version: "2012-10-17"
+      statement:
+        - effect: "Allow"
+          action:
+            - "ec2:*"
+            - "ecs:*"
+            - "eks:*"
+            - "s3:*"
+            - "iam:PassRole"
+            - "iam:CreateServiceLinkedRole"
+            - "cloudformation:*"
+            - "cloudwatch:*"
+            - "logs:*"
+            - "autoscaling:*"
+            - "elasticloadbalancing:*"
+            - "route53:*"
+            - "acm:*"
+          resource: "*"
+        
+        # GPU instance restrictions
+        - effect: "Allow"
+          action:
+            - "ec2:RunInstances"
+            - "ec2:StartInstances"
+          resource: "*"
+          condition:
+            StringEquals:
+              "ec2:InstanceType":
+                - "g4dn.xlarge"
+                - "g4dn.2xlarge"
+                - "p3.2xlarge"
+                - "p4d.24xlarge"
+        
+        # Prevent deletion of critical resources
+        - effect: "Deny"
+          action:
+            - "s3:DeleteBucket"
+            - "rds:DeleteDBInstance"
+            - "eks:DeleteCluster"
+          resource: "*"
+          condition:
+            StringNotEquals:
+              "aws:RequestTag/Environment": ["development", "testing"]
+    
+    # ML Engineer Policy
+    ml_engineer_policy:
+      name: "TextNLP-ML-Engineer-Policy"
+      version: "2012-10-17"
+      statement:
+        # S3 access for models and datasets
+        - effect: "Allow"
+          action:
+            - "s3:GetObject"
+            - "s3:PutObject"
+            - "s3:DeleteObject"
+            - "s3:ListBucket"
+          resource:
+            - "arn:aws:s3:::textnlp-models/*"
+            - "arn:aws:s3:::textnlp-datasets/*"
+            - "arn:aws:s3:::textnlp-dev/*"
+        
+        # SageMaker access
+        - effect: "Allow"
+          action:
+            - "sagemaker:CreateTrainingJob"
+            - "sagemaker:DescribeTrainingJob"
+            - "sagemaker:StopTrainingJob"
+            - "sagemaker:CreateModel"
+            - "sagemaker:CreateEndpoint"
+            - "sagemaker:CreateEndpointConfig"
+            - "sagemaker:DescribeEndpoint"
+            - "sagemaker:InvokeEndpoint"
+          resource: "*"
+        
+        # EC2 access for GPU instances
+        - effect: "Allow"
+          action:
+            - "ec2:DescribeInstances"
+            - "ec2:DescribeImages"
+            - "ec2:RunInstances"
+            - "ec2:TerminateInstances"
+            - "ec2:StartInstances"
+            - "ec2:StopInstances"
+          resource: "*"
+          condition:
+            StringEquals:
+              "ec2:InstanceType":
+                - "g4dn.xlarge"
+                - "g4dn.2xlarge"
+                - "p3.2xlarge"
+        
+        # Secrets Manager access
+        - effect: "Allow"
+          action:
+            - "secretsmanager:GetSecretValue"
+          resource:
+            - "arn:aws:secretsmanager:*:*:secret:textnlp/ml/*"
+    
+    # API Developer Policy
+    api_developer_policy:
+      name: "TextNLP-API-Developer-Policy"
+      version: "2012-10-17"
+      statement:
+        # Lambda and API Gateway
+        - effect: "Allow"
+          action:
+            - "lambda:*"
+            - "apigateway:*"
+            - "events:*"
+          resource: "*"
+        
+        # CloudWatch for monitoring
+        - effect: "Allow"
+          action:
+            - "cloudwatch:*"
+            - "logs:*"
+          resource: "*"
+        
+        # Limited S3 access
+        - effect: "Allow"
+          action:
+            - "s3:GetObject"
+            - "s3:PutObject"
+          resource:
+            - "arn:aws:s3:::textnlp-api-assets/*"
+            - "arn:aws:s3:::textnlp-logs/*"
+    
+    # Security Auditor Policy
+    security_auditor_policy:
+      name: "TextNLP-Security-Auditor-Policy"
+      version: "2012-10-17"
+      statement:
+        # Read-only access for security auditing
+        - effect: "Allow"
+          action:
+            - "iam:Get*"
+            - "iam:List*"
+            - "cloudtrail:Get*"
+            - "cloudtrail:List*"
+            - "config:Get*"
+            - "config:List*"
+            - "guardduty:Get*"
+            - "guardduty:List*"
+            - "securityhub:Get*"
+            - "securityhub:List*"
+          resource: "*"
+  
+  # IAM Roles
+  roles:
+    # EKS Service Role
+    eks_service_role:
+      name: "TextNLP-EKS-Service-Role"
+      assume_role_policy:
+        version: "2012-10-17"
+        statement:
+          - effect: "Allow"
+            principal:
+              service: "eks.amazonaws.com"
+            action: "sts:AssumeRole"
+      
+      managed_policies:
+        - "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+    
+    # EKS Node Group Role
+    eks_nodegroup_role:
+      name: "TextNLP-EKS-NodeGroup-Role"
+      assume_role_policy:
+        version: "2012-10-17"
+        statement:
+          - effect: "Allow"
+            principal:
+              service: "ec2.amazonaws.com"
+            action: "sts:AssumeRole"
+      
+      managed_policies:
+        - "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+        - "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+        - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+    
+    # Lambda Execution Role
+    lambda_execution_role:
+      name: "TextNLP-Lambda-Execution-Role"
+      assume_role_policy:
+        version: "2012-10-17"
+        statement:
+          - effect: "Allow"
+            principal:
+              service: "lambda.amazonaws.com"
+            action: "sts:AssumeRole"
+      
+      managed_policies:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+  
+  # IAM Groups
+  groups:
+    - name: "TextNLP-Platform-Architects"
+      policies:
+        - "TextNLP-Platform-Admin-Policy"
+      
+      users:
+        - "john.architect"
+    
+    - name: "TextNLP-DevOps-Engineers"
+      policies:
+        - "TextNLP-DevOps-Engineer-Policy"
+      
+      users:
+        - "sarah.devops"
+        - "mike.devops"
+    
+    - name: "TextNLP-ML-Engineers"
+      policies:
+        - "TextNLP-ML-Engineer-Policy"
+      
+      users:
+        - "alex.ml"
+        - "priya.ml"
+        - "david.ml"
+    
+    - name: "TextNLP-API-Developers"
+      policies:
+        - "TextNLP-API-Developer-Policy"
+      
+      users:
+        - "backend.dev1"
+        - "backend.dev2"
+    
+    - name: "TextNLP-Security-Auditors"
+      policies:
+        - "TextNLP-Security-Auditor-Policy"
+      
+      users:
+        - "security.auditor"
+
+# GCP IAM Configuration
+gcp_iam:
+  # Custom Roles
+  custom_roles:
+    # Platform Architect Role
+    platform_architect:
+      name: "textnlp.platformArchitect"
+      title: "TextNLP Platform Architect"
+      description: "Full access to TextNLP platform resources"
+      stage: "GA"
+      
+      permissions:
+        - "compute.*"
+        - "container.*"
+        - "storage.*"
+        - "iam.*"
+        - "cloudsql.*"
+        - "monitoring.*"
+        - "logging.*"
+        - "cloudresourcemanager.*"
+    
+    # DevOps Engineer Role
+    devops_engineer:
+      name: "textnlp.devopsEngineer"
+      title: "TextNLP DevOps Engineer"
+      description: "Infrastructure and deployment access"
+      stage: "GA"
+      
+      permissions:
+        - "compute.instances.*"
+        - "compute.disks.*"
+        - "compute.networks.*"
+        - "compute.firewalls.*"
+        - "container.clusters.*"
+        - "container.operations.*"
+        - "storage.buckets.create"
+        - "storage.buckets.delete"
+        - "storage.objects.*"
+        - "cloudsql.instances.*"
+        - "monitoring.timeSeries.*"
+        - "logging.entries.*"
+      
+      # Conditions for GPU access
+      conditions:
+        - title: "GPU Instance Access"
+          description: "Allow GPU instance types only"
+          expression: |
+            resource.type == "compute.instance" &&
+            (resource.name.endsWith("-gpu") ||
+             resource.labels["gpu-type"] != null)
+    
+    # ML Engineer Role
+    ml_engineer:
+      name: "textnlp.mlEngineer"
+      title: "TextNLP ML Engineer"
+      description: "ML model development access"
+      stage: "GA"
+      
+      permissions:
+        - "ml.models.*"
+        - "ml.versions.*"
+        - "ml.jobs.*"
+        - "storage.objects.get"
+        - "storage.objects.create"
+        - "storage.objects.update"
+        - "compute.instances.get"
+        - "compute.instances.list"
+        - "compute.instances.create"
+        - "compute.instances.delete"
+        - "aiplatform.*"
+      
+      # Resource constraints
+      conditions:
+        - title: "ML Resources Only"
+          description: "Access to ML-specific resources"
+          expression: |
+            resource.name.startsWith("projects/textnlp-prod-001/locations/") &&
+            (resource.type.startsWith("ml.") ||
+             resource.type.startsWith("aiplatform.") ||
+             resource.labels["workload"] == "ml")
+    
+    # API Developer Role
+    api_developer:
+      name: "textnlp.apiDeveloper"
+      title: "TextNLP API Developer"
+      description: "API development and cloud functions access"
+      stage: "GA"
+      
+      permissions:
+        - "cloudfunctions.*"
+        - "cloudtasks.*"
+        - "pubsub.*"
+        - "storage.objects.get"
+        - "storage.objects.create"
+        - "monitoring.timeSeries.list"
+        - "logging.entries.list"
+        - "secretmanager.versions.access"
+    
+    # Security Auditor Role
+    security_auditor:
+      name: "textnlp.securityAuditor"
+      title: "TextNLP Security Auditor"
+      description: "Read-only access for security auditing"
+      stage: "GA"
+      
+      permissions:
+        - "*.get"
+        - "*.list"
+        - "iam.roles.get"
+        - "iam.serviceAccounts.get"
+        - "logging.entries.list"
+        - "monitoring.timeSeries.list"
+        - "securitycenter.*"
+  
+  # Service Accounts
+  service_accounts:
+    # Compute Engine Service Account
+    compute_sa:
+      name: "textnlp-compute-sa"
+      display_name: "TextNLP Compute Service Account"
+      description: "Service account for Compute Engine instances"
+      
+      roles:
+        - "roles/logging.logWriter"
+        - "roles/monitoring.metricWriter"
+        - "roles/storage.objectViewer"
+    
+    # GKE Service Account
+    gke_sa:
+      name: "textnlp-gke-sa"
+      display_name: "TextNLP GKE Service Account"
+      description: "Service account for GKE clusters"
+      
+      roles:
+        - "roles/container.developer"
+        - "roles/storage.objectAdmin"
+        - "roles/logging.logWriter"
+        - "roles/monitoring.metricWriter"
+    
+    # Cloud Functions Service Account
+    functions_sa:
+      name: "textnlp-functions-sa"
+      display_name: "TextNLP Cloud Functions Service Account"
+      description: "Service account for Cloud Functions"
+      
+      roles:
+        - "roles/cloudsql.client"
+        - "roles/storage.objectAdmin"
+        - "roles/secretmanager.secretAccessor"
+    
+    # ML Pipeline Service Account
+    ml_pipeline_sa:
+      name: "textnlp-ml-pipeline-sa"
+      display_name: "TextNLP ML Pipeline Service Account"
+      description: "Service account for ML training pipelines"
+      
+      roles:
+        - "roles/ml.developer"
+        - "roles/aiplatform.user"
+        - "roles/storage.objectAdmin"
+        - "roles/bigquery.dataEditor"
+  
+  # IAM Bindings
+  iam_bindings:
+    # Project-level bindings
+    project_bindings:
+      - role: "projects/textnlp-prod-001/roles/textnlp.platformArchitect"
+        members:
+          - "user:john.architect@company.com"
+      
+      - role: "projects/textnlp-prod-001/roles/textnlp.devopsEngineer"
+        members:
+          - "user:sarah.devops@company.com"
+          - "user:mike.devops@company.com"
+      
+      - role: "projects/textnlp-prod-001/roles/textnlp.mlEngineer"
+        members:
+          - "user:alex.ml@company.com"
+          - "user:priya.ml@company.com"
+          - "user:david.ml@company.com"
+      
+      - role: "projects/textnlp-prod-001/roles/textnlp.apiDeveloper"
+        members:
+          - "user:backend.dev1@company.com"
+          - "user:backend.dev2@company.com"
+    
+    # Resource-specific bindings
+    storage_bindings:
+      - bucket: "textnlp-models"
+        role: "roles/storage.objectAdmin"
+        members:
+          - "serviceAccount:textnlp-ml-pipeline-sa@textnlp-prod-001.iam.gserviceaccount.com"
+        
+        conditions:
+          - title: "ML Engineers Only"
+            description: "Restrict access to ML engineers"
+            expression: |
+              request.auth.claims.email.endsWith("@company.com") &&
+              request.auth.claims.groups.hasAll(["ml-engineers"])
+
+# Azure RBAC Configuration
+azure_rbac:
+  # Custom Role Definitions
+  custom_roles:
+    # Platform Architect Role
+    platform_architect:
+      name: "TextNLP Platform Architect"
+      description: "Full access to TextNLP platform resources"
+      assignable_scopes:
+        - "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg"
+      
+      actions:
+        - "*"
+      
+      not_actions:
+        - "Microsoft.Authorization/*/Delete"
+        - "Microsoft.Authorization/*/Write"
+        - "Microsoft.Authorization/elevateAccess/Action"
+      
+      data_actions: []
+      not_data_actions: []
+    
+    # DevOps Engineer Role
+    devops_engineer:
+      name: "TextNLP DevOps Engineer"
+      description: "Infrastructure and deployment access"
+      assignable_scopes:
+        - "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg"
+      
+      actions:
+        - "Microsoft.Compute/*"
+        - "Microsoft.ContainerInstance/*"
+        - "Microsoft.ContainerService/*"
+        - "Microsoft.Storage/*"
+        - "Microsoft.Network/*"
+        - "Microsoft.Resources/*"
+        - "Microsoft.Insights/*"
+        - "Microsoft.OperationalInsights/*"
+      
+      not_actions:
+        - "Microsoft.Authorization/*/Delete"
+        - "Microsoft.Authorization/*/Write"
+      
+      # Conditional access for GPU VMs
+      conditions:
+        - principal_type: "User"
+          condition: |
+            @Resource[Microsoft.Compute/virtualMachines/vmSize] StringStartsWith 'Standard_NC' OR
+            @Resource[Microsoft.Compute/virtualMachines/vmSize] StringStartsWith 'Standard_ND'
+    
+    # ML Engineer Role
+    ml_engineer:
+      name: "TextNLP ML Engineer"
+      description: "ML model development access"
+      assignable_scopes:
+        - "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg"
+      
+      actions:
+        - "Microsoft.MachineLearningServices/*"
+        - "Microsoft.CognitiveServices/*"
+        - "Microsoft.Storage/storageAccounts/blobServices/containers/read"
+        - "Microsoft.Storage/storageAccounts/blobServices/containers/write"
+        - "Microsoft.Compute/virtualMachines/read"
+        - "Microsoft.Compute/virtualMachines/start/action"
+        - "Microsoft.Compute/virtualMachines/restart/action"
+      
+      data_actions:
+        - "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read"
+        - "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write"
+        - "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/delete"
+      
+      # Resource constraints
+      conditions:
+        - principal_type: "User"
+          condition: |
+            @Resource[Microsoft.Storage/storageAccounts/name] StringStartsWith 'textnlpml' OR
+            @Resource[Microsoft.Compute/virtualMachines/name] StringContains 'gpu'
+    
+    # API Developer Role
+    api_developer:
+      name: "TextNLP API Developer"
+      description: "API development access"
+      assignable_scopes:
+        - "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg"
+      
+      actions:
+        - "Microsoft.Web/*"
+        - "Microsoft.Logic/*"
+        - "Microsoft.ApiManagement/*"
+        - "Microsoft.Storage/storageAccounts/blobServices/containers/read"
+        - "Microsoft.Insights/*"
+      
+      data_actions:
+        - "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read"
+    
+    # Security Auditor Role
+    security_auditor:
+      name: "TextNLP Security Auditor"
+      description: "Read-only access for security auditing"
+      assignable_scopes:
+        - "/subscriptions/12345678-1234-1234-1234-123456789012"
+      
+      actions:
+        - "*/read"
+        - "Microsoft.Security/*"
+        - "Microsoft.PolicyInsights/*"
+        - "Microsoft.Authorization/policyDefinitions/read"
+        - "Microsoft.Authorization/policyAssignments/read"
+      
+      data_actions:
+        - "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read"
+  
+  # Role Assignments
+  role_assignments:
+    # Subscription-level assignments
+    subscription_assignments:
+      - role_definition_name: "TextNLP Platform Architect"
+        principal_id: "user:john.architect@company.com"
+        scope: "/subscriptions/12345678-1234-1234-1234-123456789012"
+      
+      - role_definition_name: "Security Reader"
+        principal_id: "user:security.auditor@company.com"
+        scope: "/subscriptions/12345678-1234-1234-1234-123456789012"
+    
+    # Resource group assignments
+    resource_group_assignments:
+      - role_definition_name: "TextNLP DevOps Engineer"
+        principal_ids:
+          - "user:sarah.devops@company.com"
+          - "user:mike.devops@company.com"
+        scope: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg"
+      
+      - role_definition_name: "TextNLP ML Engineer"
+        principal_ids:
+          - "user:alex.ml@company.com"
+          - "user:priya.ml@company.com"
+          - "user:david.ml@company.com"
+        scope: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg"
+  
+  # Azure AD Groups
+  ad_groups:
+    - name: "TextNLP Platform Architects"
+      description: "Platform architects for TextNLP"
+      members:
+        - "john.architect@company.com"
+      
+      role_assignments:
+        - role: "TextNLP Platform Architect"
+          scope: "subscription"
+    
+    - name: "TextNLP DevOps Engineers"
+      description: "DevOps engineers for TextNLP"
+      members:
+        - "sarah.devops@company.com"
+        - "mike.devops@company.com"
+      
+      role_assignments:
+        - role: "TextNLP DevOps Engineer"
+          scope: "resource_group"
+    
+    - name: "TextNLP ML Engineers"
+      description: "ML engineers for TextNLP"
+      members:
+        - "alex.ml@company.com"
+        - "priya.ml@company.com"
+        - "david.ml@company.com"
+      
+      role_assignments:
+        - role: "TextNLP ML Engineer"
+          scope: "resource_group"
+
+# Kubernetes RBAC Configuration
+kubernetes_rbac:
+  # Cluster Roles
+  cluster_roles:
+    # Platform Admin
+    platform_admin:
+      name: "textnlp-platform-admin"
+      rules:
+        - api_groups: ["*"]
+          resources: ["*"]
+          verbs: ["*"]
+    
+    # DevOps Engineer
+    devops_engineer:
+      name: "textnlp-devops-engineer"
+      rules:
+        - api_groups: ["apps", "extensions"]
+          resources: ["deployments", "replicasets", "daemonsets"]
+          verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+        
+        - api_groups: [""]
+          resources: ["pods", "services", "configmaps", "secrets", "persistentvolumes", "persistentvolumeclaims"]
+          verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+        
+        - api_groups: ["networking.k8s.io"]
+          resources: ["ingresses", "networkpolicies"]
+          verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+        
+        - api_groups: ["autoscaling"]
+          resources: ["horizontalpodautoscalers"]
+          verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    
+    # ML Engineer
+    ml_engineer:
+      name: "textnlp-ml-engineer"
+      rules:
+        - api_groups: [""]
+          resources: ["pods", "services"]
+          verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+          resource_names: []
+        
+        - api_groups: ["apps"]
+          resources: ["deployments"]
+          verbs: ["get", "list", "watch", "create", "update", "patch"]
+        
+        - api_groups: ["batch"]
+          resources: ["jobs", "cronjobs"]
+          verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+        
+        # GPU resource access
+        - api_groups: [""]
+          resources: ["nodes"]
+          verbs: ["get", "list"]
+          resource_names: []
+        
+        - api_groups: ["metrics.k8s.io"]
+          resources: ["nodes", "pods"]
+          verbs: ["get", "list"]
+    
+    # API Developer
+    api_developer:
+      name: "textnlp-api-developer"
+      rules:
+        - api_groups: [""]
+          resources: ["pods", "services", "configmaps"]
+          verbs: ["get", "list", "watch", "create", "update", "patch"]
+        
+        - api_groups: ["apps"]
+          resources: ["deployments"]
+          verbs: ["get", "list", "watch", "create", "update", "patch"]
+        
+        - api_groups: ["networking.k8s.io"]
+          resources: ["ingresses"]
+          verbs: ["get", "list", "watch", "create", "update", "patch"]
+    
+    # Security Auditor
+    security_auditor:
+      name: "textnlp-security-auditor"
+      rules:
+        - api_groups: ["*"]
+          resources: ["*"]
+          verbs: ["get", "list", "watch"]
+        
+        - api_groups: [""]
+          resources: ["events"]
+          verbs: ["get", "list", "watch"]
+  
+  # Namespace Roles
+  namespace_roles:
+    # Namespace Admin
+    namespace_admin:
+      name: "textnlp-namespace-admin"
+      rules:
+        - api_groups: ["*"]
+          resources: ["*"]
+          verbs: ["*"]
+    
+    # Developer Role
+    developer:
+      name: "textnlp-developer"
+      rules:
+        - api_groups: [""]
+          resources: ["pods", "services", "configmaps", "secrets"]
+          verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+        
+        - api_groups: ["apps"]
+          resources: ["deployments", "replicasets"]
+          verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+        
+        - api_groups: [""]
+          resources: ["pods/log", "pods/exec"]
+          verbs: ["get", "create"]
+    
+    # Viewer Role
+    viewer:
+      name: "textnlp-viewer"
+      rules:
+        - api_groups: [""]
+          resources: ["pods", "services", "configmaps"]
+          verbs: ["get", "list", "watch"]
+        
+        - api_groups: ["apps"]
+          resources: ["deployments", "replicasets"]
+          verbs: ["get", "list", "watch"]
+        
+        - api_groups: [""]
+          resources: ["pods/log"]
+          verbs: ["get"]
+  
+  # Role Bindings
+  cluster_role_bindings:
+    # Platform Admins
+    - name: "textnlp-platform-admins"
+      cluster_role: "textnlp-platform-admin"
+      subjects:
+        - kind: "User"
+          name: "john.architect@company.com"
+          api_group: "rbac.authorization.k8s.io"
+    
+    # DevOps Engineers
+    - name: "textnlp-devops-engineers"
+      cluster_role: "textnlp-devops-engineer"
+      subjects:
+        - kind: "User"
+          name: "sarah.devops@company.com"
+          api_group: "rbac.authorization.k8s.io"
+        - kind: "User"
+          name: "mike.devops@company.com"
+          api_group: "rbac.authorization.k8s.io"
+    
+    # Security Auditors
+    - name: "textnlp-security-auditors"
+      cluster_role: "textnlp-security-auditor"
+      subjects:
+        - kind: "User"
+          name: "security.auditor@company.com"
+          api_group: "rbac.authorization.k8s.io"
+  
+  # Namespace Role Bindings
+  namespace_role_bindings:
+    # ML Engineers in GPU namespace
+    - namespace: "textnlp-gpu"
+      name: "textnlp-ml-engineers"
+      role: "textnlp-developer"
+      subjects:
+        - kind: "User"
+          name: "alex.ml@company.com"
+          api_group: "rbac.authorization.k8s.io"
+        - kind: "User"
+          name: "priya.ml@company.com"
+          api_group: "rbac.authorization.k8s.io"
+        - kind: "User"
+          name: "david.ml@company.com"
+          api_group: "rbac.authorization.k8s.io"
+    
+    # API Developers in API namespace
+    - namespace: "textnlp-api"
+      name: "textnlp-api-developers"
+      role: "textnlp-developer"
+      subjects:
+        - kind: "User"
+          name: "backend.dev1@company.com"
+          api_group: "rbac.authorization.k8s.io"
+        - kind: "User"
+          name: "backend.dev2@company.com"
+          api_group: "rbac.authorization.k8s.io"
+  
+  # Service Accounts
+  service_accounts:
+    # API Service Account
+    - name: "textnlp-api-sa"
+      namespace: "textnlp-api"
+      automount_service_account_token: true
+      
+      image_pull_secrets:
+        - name: "textnlp-registry-secret"
+    
+    # GPU Service Account
+    - name: "textnlp-gpu-sa"
+      namespace: "textnlp-gpu"
+      automount_service_account_token: true
+      
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT:role/TextNLP-GPU-Role"
+    
+    # Monitoring Service Account
+    - name: "textnlp-monitoring-sa"
+      namespace: "monitoring"
+      automount_service_account_token: true
+
+# Cross-Platform Integration
+cross_platform_integration:
+  # Federated Identity
+  federated_identity:
+    # AWS-Azure Federation
+    aws_azure:
+      enabled: true
+      
+      # Azure AD as Identity Provider for AWS
+      azure_ad_saml:
+        entity_id: "https://sts.amazonaws.com/SAML"
+        reply_url: "https://signin.aws.amazon.com/saml"
+        attribute_mapping:
+          - aws_attribute: "https://aws.amazon.com/SAML/Attributes/Role"
+            azure_claim: "assignedroles"
+          - aws_attribute: "https://aws.amazon.com/SAML/Attributes/RoleSessionName"
+            azure_claim: "emailaddress"
+    
+    # GCP-Azure Federation
+    gcp_azure:
+      enabled: true
+      
+      # Workload Identity Federation
+      workload_identity:
+        pool_id: "azure-pool"
+        provider_id: "azure-provider"
+        
+        attribute_mapping:
+          "google.subject": "assertion.sub"
+          "attribute.azure_tenant": "assertion.tid"
+          "attribute.principal": "assertion.oid"
+  
+  # Single Sign-On (SSO)
+  sso:
+    provider: "Azure AD"
+    
+    # Application registrations
+    applications:
+      - name: "TextNLP AWS Console"
+        platform: "aws"
+        auth_method: "saml"
+      
+      - name: "TextNLP GCP Console"
+        platform: "gcp"
+        auth_method: "oidc"
+      
+      - name: "TextNLP Kubernetes"
+        platform: "kubernetes"
+        auth_method: "oidc"
+    
+    # Group synchronization
+    group_sync:
+      enabled: true
+      
+      mappings:
+        - azure_group: "TextNLP Platform Architects"
+          aws_role: "arn:aws:iam::ACCOUNT:role/TextNLP-Platform-Admin"
+          gcp_role: "projects/textnlp-prod-001/roles/textnlp.platformArchitect"
+          k8s_group: "textnlp-platform-admins"
+        
+        - azure_group: "TextNLP DevOps Engineers"
+          aws_role: "arn:aws:iam::ACCOUNT:role/TextNLP-DevOps-Engineer"
+          gcp_role: "projects/textnlp-prod-001/roles/textnlp.devopsEngineer"
+          k8s_group: "textnlp-devops-engineers"
+
+# Audit and Compliance
+audit_compliance:
+  # Access Reviews
+  access_reviews:
+    schedule: "quarterly"
+    
+    review_scope:
+      - "privileged_access_roles"
+      - "service_account_permissions"
+      - "cross_platform_access"
+      - "emergency_access_accounts"
+    
+    reviewers:
+      - role: "platform_admin"
+        reviewer: "john.architect@company.com"
+      - role: "security_admin"
+        reviewer: "security.auditor@company.com"
+    
+    automation:
+      auto_remove_unused_access: true
+      notification_before_removal: "7 days"
+  
+  # Privileged Access Management
+  privileged_access:
+    just_in_time_access:
+      enabled: true
+      max_duration: "8 hours"
+      approval_required: true
+      
+      approvers:
+        - "john.architect@company.com"
+        - "security.auditor@company.com"
+    
+    emergency_access:
+      break_glass_accounts:
+        - account: "emergency-admin-aws"
+          platform: "aws"
+          sealed_credentials: true
+        - account: "emergency-admin-gcp"
+          platform: "gcp"
+          sealed_credentials: true
+      
+      usage_monitoring:
+        real_time_alerts: true
+        immediate_review_required: true
+  
+  # Compliance Reporting
+  compliance_reporting:
+    automated_reports:
+      - name: "IAM Access Report"
+        frequency: "monthly"
+        recipients:
+          - "security.auditor@company.com"
+          - "john.architect@company.com"
+      
+      - name: "Privileged Access Usage"
+        frequency: "weekly"
+        recipients:
+          - "security.auditor@company.com"
+      
+      - name: "Cross-Platform Access Analysis"
+        frequency: "quarterly"
+        recipients:
+          - "ciso@company.com"
+          - "security.auditor@company.com"

@@ -1,0 +1,416 @@
+# AWS Network Configuration for TextNLP Platform
+# Phase 2: Foundation Setup
+
+apiVersion: v1
+kind: AWSNetworkConfig
+metadata:
+  name: textnlp-aws-network
+  environment: production
+  region: us-east-1
+
+vpc:
+  cidr: "10.0.0.0/16"
+  name: "textnlp-vpc"
+  enable_dns_hostnames: true
+  enable_dns_support: true
+  
+  tags:
+    Project: "TextNLP"
+    Environment: "Production"
+    ManagedBy: "TextNLP-Platform"
+    CostCenter: "AI-ML"
+
+availability_zones:
+  - us-east-1a
+  - us-east-1b
+  - us-east-1c
+
+# Public subnets for load balancers and NAT gateways
+public_subnets:
+  - name: "textnlp-public-1a"
+    cidr: "10.0.1.0/24"
+    availability_zone: "us-east-1a"
+    map_public_ip_on_launch: true
+  - name: "textnlp-public-1b"
+    cidr: "10.0.2.0/24"
+    availability_zone: "us-east-1b"
+    map_public_ip_on_launch: true
+  - name: "textnlp-public-1c"
+    cidr: "10.0.3.0/24"
+    availability_zone: "us-east-1c"
+    map_public_ip_on_launch: true
+
+# Private subnets for application workloads
+private_subnets:
+  - name: "textnlp-private-app-1a"
+    cidr: "10.0.10.0/24"
+    availability_zone: "us-east-1a"
+  - name: "textnlp-private-app-1b"
+    cidr: "10.0.11.0/24"
+    availability_zone: "us-east-1b"
+  - name: "textnlp-private-app-1c"
+    cidr: "10.0.12.0/24"
+    availability_zone: "us-east-1c"
+
+# GPU-optimized subnets for ML workloads
+gpu_subnets:
+  - name: "textnlp-gpu-1a"
+    cidr: "10.0.20.0/24"
+    availability_zone: "us-east-1a"
+    instance_types:
+      - "g4dn.xlarge"
+      - "g4dn.2xlarge"
+      - "p3.2xlarge"
+      - "p4d.24xlarge"
+  - name: "textnlp-gpu-1b"
+    cidr: "10.0.21.0/24"
+    availability_zone: "us-east-1b"
+    instance_types:
+      - "g4dn.xlarge"
+      - "g4dn.2xlarge"
+      - "p3.2xlarge"
+      - "p4d.24xlarge"
+
+# Database subnets
+database_subnets:
+  - name: "textnlp-db-1a"
+    cidr: "10.0.30.0/24"
+    availability_zone: "us-east-1a"
+  - name: "textnlp-db-1b"
+    cidr: "10.0.31.0/24"
+    availability_zone: "us-east-1b"
+  - name: "textnlp-db-1c"
+    cidr: "10.0.32.0/24"
+    availability_zone: "us-east-1c"
+
+# NAT Gateways for outbound internet access
+nat_gateways:
+  - name: "textnlp-nat-1a"
+    subnet: "textnlp-public-1a"
+    allocation_id: "auto"
+  - name: "textnlp-nat-1b"
+    subnet: "textnlp-public-1b"
+    allocation_id: "auto"
+
+# Internet Gateway
+internet_gateway:
+  name: "textnlp-igw"
+
+# Route Tables
+route_tables:
+  public:
+    name: "textnlp-public-rt"
+    routes:
+      - destination: "0.0.0.0/0"
+        target: "internet_gateway"
+    subnets:
+      - "textnlp-public-1a"
+      - "textnlp-public-1b"
+      - "textnlp-public-1c"
+  
+  private_app:
+    name: "textnlp-private-app-rt"
+    routes:
+      - destination: "0.0.0.0/0"
+        target: "nat_gateway"
+        nat_gateway: "textnlp-nat-1a"
+    subnets:
+      - "textnlp-private-app-1a"
+      - "textnlp-private-app-1c"
+  
+  private_app_1b:
+    name: "textnlp-private-app-1b-rt"
+    routes:
+      - destination: "0.0.0.0/0"
+        target: "nat_gateway"
+        nat_gateway: "textnlp-nat-1b"
+    subnets:
+      - "textnlp-private-app-1b"
+  
+  gpu:
+    name: "textnlp-gpu-rt"
+    routes:
+      - destination: "0.0.0.0/0"
+        target: "nat_gateway"
+        nat_gateway: "textnlp-nat-1a"
+    subnets:
+      - "textnlp-gpu-1a"
+      - "textnlp-gpu-1b"
+  
+  database:
+    name: "textnlp-db-rt"
+    routes: []  # No internet access for database subnets
+    subnets:
+      - "textnlp-db-1a"
+      - "textnlp-db-1b"
+      - "textnlp-db-1c"
+
+# Security Groups
+security_groups:
+  application:
+    name: "textnlp-app-sg"
+    description: "Security group for TextNLP application servers"
+    ingress_rules:
+      - protocol: "tcp"
+        from_port: 80
+        to_port: 80
+        source: "load_balancer_sg"
+      - protocol: "tcp"
+        from_port: 443
+        to_port: 443
+        source: "load_balancer_sg"
+      - protocol: "tcp"
+        from_port: 8000
+        to_port: 8000
+        source: "load_balancer_sg"
+      - protocol: "tcp"
+        from_port: 22
+        to_port: 22
+        source: "bastion_sg"
+    egress_rules:
+      - protocol: "all"
+        destination: "0.0.0.0/0"
+  
+  load_balancer:
+    name: "textnlp-lb-sg"
+    description: "Security group for load balancers"
+    ingress_rules:
+      - protocol: "tcp"
+        from_port: 80
+        to_port: 80
+        source: "0.0.0.0/0"
+      - protocol: "tcp"
+        from_port: 443
+        to_port: 443
+        source: "0.0.0.0/0"
+    egress_rules:
+      - protocol: "all"
+        destination: "0.0.0.0/0"
+  
+  gpu_workers:
+    name: "textnlp-gpu-sg"
+    description: "Security group for GPU worker nodes"
+    ingress_rules:
+      - protocol: "tcp"
+        from_port: 8080
+        to_port: 8080
+        source: "application_sg"
+      - protocol: "tcp"
+        from_port: 50051
+        to_port: 50051
+        source: "application_sg"  # gRPC for model serving
+      - protocol: "tcp"
+        from_port: 22
+        to_port: 22
+        source: "bastion_sg"
+    egress_rules:
+      - protocol: "all"
+        destination: "0.0.0.0/0"
+  
+  database:
+    name: "textnlp-db-sg"
+    description: "Security group for databases"
+    ingress_rules:
+      - protocol: "tcp"
+        from_port: 5432
+        to_port: 5432
+        source: "application_sg"
+      - protocol: "tcp"
+        from_port: 6379
+        to_port: 6379
+        source: "application_sg"  # Redis
+    egress_rules: []  # No outbound internet access
+  
+  bastion:
+    name: "textnlp-bastion-sg"
+    description: "Security group for bastion hosts"
+    ingress_rules:
+      - protocol: "tcp"
+        from_port: 22
+        to_port: 22
+        source: "company_ip_ranges"  # Replace with actual IP ranges
+    egress_rules:
+      - protocol: "all"
+        destination: "10.0.0.0/16"  # Only internal VPC access
+
+# VPC Endpoints for AWS services
+vpc_endpoints:
+  s3:
+    service: "com.amazonaws.us-east-1.s3"
+    type: "Gateway"
+    route_table_ids: ["private_app", "gpu", "database"]
+  
+  ec2:
+    service: "com.amazonaws.us-east-1.ec2"
+    type: "Interface"
+    subnet_ids: ["textnlp-private-app-1a", "textnlp-private-app-1b"]
+    security_group_ids: ["application_sg"]
+  
+  ecr_api:
+    service: "com.amazonaws.us-east-1.ecr.api"
+    type: "Interface"
+    subnet_ids: ["textnlp-private-app-1a", "textnlp-private-app-1b"]
+    security_group_ids: ["application_sg"]
+  
+  ecr_dkr:
+    service: "com.amazonaws.us-east-1.ecr.dkr"
+    type: "Interface"
+    subnet_ids: ["textnlp-private-app-1a", "textnlp-private-app-1b"]
+    security_group_ids: ["application_sg"]
+  
+  ssm:
+    service: "com.amazonaws.us-east-1.ssm"
+    type: "Interface"
+    subnet_ids: ["textnlp-private-app-1a", "textnlp-private-app-1b"]
+    security_group_ids: ["application_sg"]
+
+# Network ACLs for additional security
+network_acls:
+  application:
+    name: "textnlp-app-nacl"
+    subnets:
+      - "textnlp-private-app-1a"
+      - "textnlp-private-app-1b"
+      - "textnlp-private-app-1c"
+    ingress_rules:
+      - rule_number: 100
+        protocol: "tcp"
+        port_range: "80-80"
+        source: "10.0.0.0/16"
+        action: "allow"
+      - rule_number: 110
+        protocol: "tcp"
+        port_range: "443-443"
+        source: "10.0.0.0/16"
+        action: "allow"
+      - rule_number: 120
+        protocol: "tcp"
+        port_range: "8000-8000"
+        source: "10.0.0.0/16"
+        action: "allow"
+      - rule_number: 130
+        protocol: "tcp"
+        port_range: "32768-65535"  # Ephemeral ports
+        source: "0.0.0.0/0"
+        action: "allow"
+    egress_rules:
+      - rule_number: 100
+        protocol: "all"
+        destination: "0.0.0.0/0"
+        action: "allow"
+  
+  gpu:
+    name: "textnlp-gpu-nacl"
+    subnets:
+      - "textnlp-gpu-1a"
+      - "textnlp-gpu-1b"
+    ingress_rules:
+      - rule_number: 100
+        protocol: "tcp"
+        port_range: "8080-8080"
+        source: "10.0.0.0/16"
+        action: "allow"
+      - rule_number: 110
+        protocol: "tcp"
+        port_range: "50051-50051"
+        source: "10.0.0.0/16"
+        action: "allow"
+      - rule_number: 120
+        protocol: "tcp"
+        port_range: "32768-65535"
+        source: "0.0.0.0/0"
+        action: "allow"
+    egress_rules:
+      - rule_number: 100
+        protocol: "all"
+        destination: "0.0.0.0/0"
+        action: "allow"
+
+# Flow Logs for network monitoring
+flow_logs:
+  vpc_flow_log:
+    name: "textnlp-vpc-flow-log"
+    resource_type: "VPC"
+    traffic_type: "ALL"
+    log_destination_type: "cloud-watch-logs"
+    log_group_name: "/aws/vpc/textnlp/flowlogs"
+    iam_role_arn: "arn:aws:iam::ACCOUNT:role/flowlogsRole"
+
+# Monitoring and Alerting
+monitoring:
+  cloudwatch_alarms:
+    nat_gateway_bandwidth:
+      metric_name: "BytesOutToDestination"
+      namespace: "AWS/NatGateway"
+      threshold: 1000000000  # 1GB
+      comparison: "GreaterThanThreshold"
+      evaluation_periods: 2
+      period: 300
+    
+    vpc_flow_logs_errors:
+      metric_name: "ErrorCount"
+      namespace: "AWS/VPC"
+      threshold: 10
+      comparison: "GreaterThanThreshold"
+      evaluation_periods: 1
+      period: 300
+
+# Cost Optimization
+cost_optimization:
+  nat_gateway_optimization:
+    enable_nat_instance_fallback: true
+    schedule_nat_gateway_shutdown: false  # Keep running for production
+  
+  vpc_endpoint_usage:
+    monitor_usage: true
+    optimize_endpoints: true
+
+# Disaster Recovery
+disaster_recovery:
+  multi_az_deployment: true
+  cross_region_vpc_peering:
+    enabled: false  # Enable when secondary region is ready
+    peer_region: "us-west-2"
+  
+  backup_strategy:
+    vpc_configuration_backup: true
+    backup_schedule: "daily"
+    retention_days: 30
+
+# Compliance and Security
+compliance:
+  encryption_in_transit: true
+  network_segmentation: true
+  principle_of_least_privilege: true
+  
+  audit_logging:
+    vpc_flow_logs: true
+    cloudtrail_integration: true
+    config_rules:
+      - "vpc-sg-open-only-to-authorized-ports"
+      - "vpc-default-security-group-closed"
+      - "subnet-auto-assign-public-ip-disabled"
+
+# Deployment Instructions
+deployment:
+  terraform_backend:
+    bucket: "textnlp-terraform-state"
+    key: "network/terraform.tfstate"
+    region: "us-east-1"
+    encrypt: true
+  
+  deployment_order:
+    1. "VPC and Internet Gateway"
+    2. "Subnets"
+    3. "NAT Gateways"
+    4. "Route Tables"
+    5. "Security Groups"
+    6. "VPC Endpoints"
+    7. "Network ACLs"
+    8. "Flow Logs"
+  
+  validation_tests:
+    - "Connectivity test between subnets"
+    - "Internet access from private subnets via NAT"
+    - "Security group rule validation"
+    - "VPC endpoint functionality test"

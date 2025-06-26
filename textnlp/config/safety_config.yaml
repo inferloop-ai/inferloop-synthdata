@@ -1,0 +1,151 @@
+# Safety Configuration for TextNLP
+# Comprehensive safety and compliance settings
+
+# PII Detection Configuration
+pii_detection:
+  enabled: true
+  confidence_threshold: 0.5
+  mask_mode: "replace"  # "replace", "hash", "remove"
+  languages: ["en"]
+  
+  # Detection methods to enable
+  detection_methods:
+    presidio: true
+    regex_patterns: true
+    spacy_ner: true
+    validation: true
+  
+  # PII types to detect
+  enabled_types:
+    - "email"
+    - "phone_number"
+    - "ssn"
+    - "credit_card"
+    - "ip_address"
+    - "person"
+    - "location"
+    - "organization"
+    - "date_time"
+    - "medical_license"
+    - "passport"
+    - "drivers_license"
+    - "address"
+    - "age"
+
+# Toxicity Classification Configuration
+toxicity_classification:
+  enabled: true
+  confidence_threshold: 0.5
+  
+  # Models to use
+  models:
+    detoxify: true
+    unitary_toxic: true
+    content_safety: true
+    hate_speech: true
+  
+  # API integrations (requires API keys)
+  apis:
+    openai_moderation:
+      enabled: false
+      api_key: "${OPENAI_API_KEY}"
+    perspective_api:
+      enabled: false
+      api_key: "${PERSPECTIVE_API_KEY}"
+  
+  # Action thresholds
+  action_thresholds:
+    warn: 0.3
+    flag: 0.5
+    block: 0.8
+
+# Bias Detection Configuration
+bias_detection:
+  enabled: true
+  confidence_threshold: 0.4
+  
+  # Bias types to detect
+  enabled_types:
+    - "gender"
+    - "racial"
+    - "religious"
+    - "age"
+    - "socioeconomic"
+    - "disability"
+    - "nationality"
+    - "political"
+    - "occupation"
+    - "sexual_orientation"
+  
+  # Detection methods
+  detection_methods:
+    lexicon: true
+    patterns: true
+    ml_models: true
+    linguistics: true
+    semantic: true
+
+# Compliance Checking Configuration
+compliance_checking:
+  enabled: true
+  violation_threshold: 0.5
+  
+  # Standards to check
+  enabled_standards:
+    - "gdpr"
+    - "ccpa"
+    - "hipaa"
+    - "eu_ai_act"
+    - "coppa"
+    - "sox"
+    - "pci_dss"
+  
+  # External compliance checkers
+  external_checkers:
+    gdpr_checker: false
+    hipaa_checker: false
+
+# Audit Logging Configuration
+audit_logging:
+  enabled: true
+  log_level: "INFO"
+  
+  # Storage backend
+  storage:
+    backend: "file"  # "file", "database", "elasticsearch", "cloudwatch"
+    config:
+      directory: "logs/audit"
+      max_file_size_mb: 100
+      max_files: 10
+  
+  # Retention and security
+  retention_days: 90
+  enable_encryption: true
+  async_logging: true
+  buffer_size: 1000
+  flush_interval: 30
+  
+  # Event filtering
+  include_sensitive_data: false
+  exclude_events: []
+  include_events: []
+
+# Global Safety Settings
+global:
+  # Safety mode: "strict", "moderate", "permissive"
+  safety_mode: "moderate"
+  
+  # Fail-safe behavior
+  fail_safe: true  # Block on safety system failures
+  
+  # Reporting
+  generate_safety_reports: true
+  report_frequency: "daily"  # "hourly", "daily", "weekly"
+  
+  # Integration settings
+  cache_enabled: true
+  cache_ttl: 3600  # seconds
+  
+  # Performance settings
+  max_workers: 4
+  timeout: 30  # seconds per safety check

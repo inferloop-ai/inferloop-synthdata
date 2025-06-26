@@ -1,0 +1,689 @@
+# On-Premises Kubernetes Network Setup for TextNLP Platform
+# Phase 2: Foundation Setup
+
+apiVersion: v1
+kind: OnPremKubernetesConfig
+metadata:
+  name: textnlp-onprem-k8s
+  cluster_name: textnlp-production
+  environment: production
+  datacenter: primary
+
+# Cluster Configuration
+cluster:
+  name: "textnlp-production"
+  version: "1.28.3"
+  
+  # Control plane configuration
+  control_plane:
+    nodes: 3
+    high_availability: true
+    load_balancer:
+      type: "haproxy"  # or "keepalived", "metallb"
+      vip: "10.100.1.10"
+    
+    # etcd configuration
+    etcd:
+      cluster_size: 3
+      backup_schedule: "0 2 * * *"  # Daily at 2 AM
+      encryption_at_rest: true
+      data_dir: "/var/lib/etcd"
+      
+      # Performance tuning
+      heartbeat_interval: "100ms"
+      election_timeout: "1000ms"
+      snapshot_count: 100000
+  
+  # Worker node configuration
+  worker_nodes:
+    count: 5
+    
+    # Node pools
+    node_pools:
+      - name: "cpu-workers"
+        count: 3
+        labels:
+          node-type: "cpu"
+          workload: "general"
+        taints: []
+        
+        resources:
+          cpu: "16 cores"
+          memory: "64Gi"
+          storage: "500Gi SSD"
+      
+      - name: "gpu-workers"
+        count: 2
+        labels:
+          node-type: "gpu"
+          workload: "ml"
+          gpu-type: "nvidia-t4"
+        taints:
+          - key: "gpu"
+            value: "true"
+            effect: "NoSchedule"
+        
+        resources:
+          cpu: "32 cores"
+          memory: "128Gi"
+          storage: "1Ti NVMe"
+          gpu: "2x NVIDIA T4"
+
+# Networking Configuration
+networking:
+  # Pod and Service CIDR ranges
+  pod_cidr: "10.244.0.0/16"
+  service_cidr: "10.96.0.0/12"
+  
+  # CNI Plugin
+  cni:
+    plugin: "calico"  # or "cilium", "flannel", "weave"
+    version: "3.26.3"
+    
+    # Calico configuration
+    calico:
+      # Network backend
+      backend: "bird"
+      
+      # IP pools
+      ip_pools:
+        - name: "default-ipv4-ippool"
+          cidr: "10.244.0.0/16"
+          block_size: 26
+          nat_outgoing: true
+          disabled: false
+          node_selector: "all()"
+        
+        - name: "gpu-ipv4-ippool"
+          cidr: "10.245.0.0/16"
+          block_size: 26
+          nat_outgoing: true
+          disabled: false
+          node_selector: "node-type == 'gpu'"
+      
+      # Felix configuration
+      felix:
+        log_severity_screen: "Info"
+        reporting_interval: "0s"
+        interface_prefix: "cali"
+        
+        # Performance tuning
+        bpf_enabled: true
+        bpf_log_level: "Info"
+        
+        # Security policies
+        default_endpoint_to_host_action: "ACCEPT"
+        iptables_backend: "NFT"
+  
+  # Service mesh (optional)
+  service_mesh:
+    enabled: true
+    provider: "istio"  # or "linkerd", "consul-connect"
+    version: "1.19.3"
+    
+    istio:
+      # Control plane configuration
+      pilot:
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+      
+      # Gateway configuration
+      gateways:
+        - name: "textnlp-gateway"
+          namespace: "istio-system"
+          selector:
+            istio: "ingressgateway"
+          servers:
+            - port:
+                number: 80
+                name: "http"
+                protocol: "HTTP"
+              hosts:
+                - "*.textnlp.local"
+              tls:
+                httpsRedirect: true
+            - port:
+                number: 443
+                name: "https"
+                protocol: "HTTPS"
+              hosts:
+                - "*.textnlp.local"
+              tls:
+                mode: "SIMPLE"
+                credentialName: "textnlp-tls-secret"
+
+# Storage Configuration
+storage:
+  # Storage classes
+  storage_classes:
+    - name: "fast-ssd"
+      provisioner: "kubernetes.io/no-provisioner"  # Local provisioner
+      volume_binding_mode: "WaitForFirstConsumer"
+      parameters:
+        type: "nvme-ssd"
+        fsType: "ext4"
+      
+    - name: "standard"
+      provisioner: "nfs-subdir-external-provisioner"
+      volume_binding_mode: "Immediate"
+      parameters:
+        server: "nfs.textnlp.local"
+        path: "/storage/kubernetes"
+        archiveOnDelete: "false"
+      
+    - name: "model-storage"
+      provisioner: "ceph.rook.io/block"
+      volume_binding_mode: "Immediate"
+      parameters:
+        pool: "replicapool"
+        clusterID: "textnlp-ceph"
+        fstype: "ext4"
+  
+  # Persistent volumes
+  persistent_volumes:
+    - name: "model-registry-pv"
+      capacity: "10Ti"
+      access_modes: ["ReadWriteMany"]
+      storage_class: "model-storage"
+      nfs:
+        server: "nfs.textnlp.local"
+        path: "/storage/models"
+    
+    - name: "datasets-pv"
+      capacity: "5Ti"
+      access_modes: ["ReadWriteMany"]
+      storage_class: "standard"
+      nfs:
+        server: "nfs.textnlp.local"
+        path: "/storage/datasets"
+
+# Load Balancing
+load_balancing:
+  # MetalLB for bare metal load balancing
+  metallb:
+    enabled: true
+    version: "0.13.12"
+    
+    # IP address pools
+    address_pools:
+      - name: "textnlp-pool"
+        protocol: "layer2"
+        addresses:
+          - "10.100.1.100-10.100.1.200"
+      
+      - name: "gpu-pool"
+        protocol: "bgp"
+        addresses:
+          - "10.100.2.100-10.100.2.150"
+        bgp_advertisements:
+          - aggregation_length: 32
+            localpref: 100
+  
+  # Ingress Controllers
+  ingress:
+    - name: "nginx-ingress"
+      namespace: "ingress-nginx"
+      chart: "ingress-nginx/ingress-nginx"
+      version: "4.8.3"
+      
+      values:
+        controller:
+          service:
+            type: "LoadBalancer"
+            loadBalancerIP: "10.100.1.100"
+          
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          
+          # Enable metrics
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
+    
+    - name: "istio-gateway"
+      namespace: "istio-system"
+      service_type: "LoadBalancer"
+      load_balancer_ip: "10.100.1.101"
+
+# DNS Configuration
+dns:
+  # CoreDNS configuration
+  coredns:
+    replicas: 3
+    
+    # Custom DNS entries
+    custom_dns:
+      textnlp.local: "10.100.1.100"
+      api.textnlp.local: "10.100.1.100"
+      models.textnlp.local: "10.100.1.101"
+      gpu.textnlp.local: "10.100.1.102"
+    
+    # Upstream DNS servers
+    upstream_dns:
+      - "8.8.8.8"
+      - "8.8.4.4"
+      - "1.1.1.1"
+    
+    # DNS caching
+    cache:
+      enabled: true
+      ttl: 300
+  
+  # External DNS for automatic DNS management
+  external_dns:
+    enabled: false  # Enable if using external DNS provider
+    provider: "rfc2136"  # or "bind", "powerdns"
+    
+    rfc2136:
+      host: "dns.textnlp.local"
+      port: 53
+      zone: "textnlp.local"
+      secret: "dns-update-secret"
+
+# Security Configuration
+security:
+  # Network policies
+  network_policies:
+    enabled: true
+    default_deny: true
+    
+    policies:
+      - name: "allow-same-namespace"
+        namespace: "default"
+        spec:
+          podSelector: {}
+          ingress:
+            - from:
+                - namespaceSelector:
+                    matchLabels:
+                      name: "default"
+      
+      - name: "allow-gpu-to-api"
+        namespace: "textnlp-gpu"
+        spec:
+          podSelector:
+            matchLabels:
+              app: "gpu-worker"
+          ingress:
+            - from:
+                - namespaceSelector:
+                    matchLabels:
+                      name: "textnlp-api"
+              ports:
+                - protocol: "TCP"
+                  port: 50051
+      
+      - name: "deny-internet-egress"
+        namespace: "textnlp-gpu"
+        spec:
+          podSelector:
+            matchLabels:
+              security: "restricted"
+          egress:
+            - to:
+                - namespaceSelector: {}
+              ports:
+                - protocol: "TCP"
+                  port: 53
+                - protocol: "UDP"
+                  port: 53
+  
+  # Pod Security Standards
+  pod_security:
+    enabled: true
+    default_policy: "restricted"
+    
+    # Namespace policies
+    namespace_policies:
+      - namespace: "textnlp-api"
+        policy: "baseline"
+      - namespace: "textnlp-gpu"
+        policy: "restricted"
+      - namespace: "kube-system"
+        policy: "privileged"
+  
+  # RBAC Configuration
+  rbac:
+    enabled: true
+    
+    # Custom roles
+    cluster_roles:
+      - name: "textnlp-admin"
+        rules:
+          - apiGroups: ["*"]
+            resources: ["*"]
+            verbs: ["*"]
+      
+      - name: "textnlp-developer"
+        rules:
+          - apiGroups: ["", "apps", "extensions"]
+            resources: ["*"]
+            verbs: ["get", "list", "watch", "create", "update", "patch"]
+      
+      - name: "textnlp-viewer"
+        rules:
+          - apiGroups: ["", "apps", "extensions"]
+            resources: ["*"]
+            verbs: ["get", "list", "watch"]
+    
+    # Service accounts
+    service_accounts:
+      - name: "textnlp-api-sa"
+        namespace: "textnlp-api"
+        cluster_role: "textnlp-developer"
+      
+      - name: "textnlp-gpu-sa"
+        namespace: "textnlp-gpu"
+        cluster_role: "textnlp-developer"
+
+# Monitoring and Observability
+monitoring:
+  # Prometheus stack
+  prometheus:
+    enabled: true
+    namespace: "monitoring"
+    
+    # Prometheus server
+    server:
+      retention: "30d"
+      storage:
+        size: "500Gi"
+        storage_class: "fast-ssd"
+      
+      resources:
+        requests:
+          cpu: "2"
+          memory: "8Gi"
+        limits:
+          cpu: "4"
+          memory: "16Gi"
+    
+    # Alert manager
+    alertmanager:
+      enabled: true
+      replicas: 3
+      
+      config:
+        global:
+          smtp_smarthost: "smtp.company.com:587"
+          smtp_from: "alerts@textnlp.local"
+        
+        route:
+          group_by: ["alertname"]
+          group_wait: "10s"
+          group_interval: "10s"
+          repeat_interval: "1h"
+          receiver: "web.hook"
+        
+        receivers:
+          - name: "web.hook"
+            slack_configs:
+              - api_url: "SLACK_WEBHOOK_URL"
+                channel: "#textnlp-alerts"
+  
+  # Grafana
+  grafana:
+    enabled: true
+    namespace: "monitoring"
+    
+    admin_password: "admin123"  # Change in production
+    
+    # Data sources
+    datasources:
+      - name: "Prometheus"
+        type: "prometheus"
+        url: "http://prometheus-server.monitoring.svc.cluster.local"
+    
+    # Dashboards
+    dashboards:
+      - "kubernetes-cluster-monitoring"
+      - "kubernetes-resource-requests"
+      - "node-exporter-full"
+      - "gpu-metrics"
+
+# Backup and Disaster Recovery
+backup:
+  # Velero for cluster backup
+  velero:
+    enabled: true
+    version: "1.12.1"
+    
+    # Backup location
+    backup_location:
+      provider: "aws"  # or "gcp", "azure", "minio"
+      bucket: "textnlp-k8s-backups"
+      config:
+        region: "us-east-1"
+        s3ForcePathStyle: "false"
+    
+    # Volume snapshot location
+    volume_snapshot_location:
+      provider: "csi"
+      config:
+        region: "us-east-1"
+    
+    # Backup schedules
+    schedules:
+      - name: "daily-backup"
+        schedule: "0 2 * * *"  # Daily at 2 AM
+        include_namespaces:
+          - "textnlp-api"
+          - "textnlp-gpu"
+          - "textnlp-db"
+        ttl: "720h"  # 30 days
+      
+      - name: "weekly-full-backup"
+        schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM
+        include_namespaces: []  # All namespaces
+        ttl: "2160h"  # 90 days
+
+# GPU Configuration
+gpu:
+  # NVIDIA GPU Operator
+  nvidia_gpu_operator:
+    enabled: true
+    version: "23.9.1"
+    
+    # Driver configuration
+    driver:
+      enabled: true
+      version: "525.125.06"
+    
+    # Container toolkit
+    toolkit:
+      enabled: true
+      version: "1.14.3"
+    
+    # Device plugin
+    device_plugin:
+      enabled: true
+    
+    # MIG (Multi-Instance GPU) support
+    mig:
+      strategy: "single"  # or "mixed"
+    
+    # GPU Feature Discovery
+    gfd:
+      enabled: true
+    
+    # Node Feature Discovery
+    nfd:
+      enabled: true
+  
+  # GPU resource allocation
+  resource_allocation:
+    default_gpu_limit: 1
+    
+    # GPU sharing configuration
+    gpu_sharing:
+      enabled: false  # Enable for development environments
+      default_memory: "8Gi"
+      default_cores: 50
+
+# Application-Specific Configurations
+applications:
+  # Namespace configuration
+  namespaces:
+    - name: "textnlp-api"
+      labels:
+        app: "textnlp"
+        tier: "api"
+        security: "standard"
+      
+      resource_quota:
+        hard:
+          requests.cpu: "20"
+          requests.memory: "80Gi"
+          limits.cpu: "40"
+          limits.memory: "160Gi"
+          persistentvolumeclaims: "10"
+    
+    - name: "textnlp-gpu"
+      labels:
+        app: "textnlp"
+        tier: "gpu"
+        security: "restricted"
+      
+      resource_quota:
+        hard:
+          requests.cpu: "40"
+          requests.memory: "256Gi"
+          requests.nvidia.com/gpu: "4"
+          limits.cpu: "64"
+          limits.memory: "512Gi"
+          limits.nvidia.com/gpu: "4"
+    
+    - name: "textnlp-db"
+      labels:
+        app: "textnlp"
+        tier: "database"
+        security: "restricted"
+
+# Deployment Automation
+deployment:
+  # GitOps with ArgoCD
+  argocd:
+    enabled: true
+    version: "2.8.4"
+    namespace: "argocd"
+    
+    # Repository configuration
+    repositories:
+      - url: "https://github.com/company/textnlp-k8s-manifests"
+        name: "textnlp-manifests"
+        type: "git"
+    
+    # Applications
+    applications:
+      - name: "textnlp-api"
+        namespace: "argocd"
+        source:
+          repoURL: "https://github.com/company/textnlp-k8s-manifests"
+          path: "applications/api"
+          targetRevision: "HEAD"
+        destination:
+          server: "https://kubernetes.default.svc"
+          namespace: "textnlp-api"
+        syncPolicy:
+          automated:
+            prune: true
+            selfHeal: true
+  
+  # Helm deployment
+  helm:
+    enabled: true
+    version: "3.13.1"
+    
+    # Helm repositories
+    repositories:
+      - name: "bitnami"
+        url: "https://charts.bitnami.com/bitnami"
+      - name: "nvidia"
+        url: "https://nvidia.github.io/gpu-operator"
+      - name: "prometheus-community"
+        url: "https://prometheus-community.github.io/helm-charts"
+
+# Maintenance and Operations
+maintenance:
+  # Cluster autoscaler
+  cluster_autoscaler:
+    enabled: false  # Not applicable for on-premises
+  
+  # Node maintenance
+  node_maintenance:
+    # Scheduled maintenance windows
+    maintenance_windows:
+      - day: "Sunday"
+        start_time: "02:00"
+        duration: "4h"
+        timezone: "UTC"
+    
+    # Automatic updates
+    auto_updates:
+      enabled: false  # Manual updates for production
+      schedule: "0 3 * * 1"  # Monday at 3 AM
+  
+  # Resource cleanup
+  resource_cleanup:
+    # Pod cleanup
+    pod_cleanup:
+      failed_pods_older_than: "24h"
+      succeeded_pods_older_than: "1h"
+    
+    # Image cleanup
+    image_cleanup:
+      unused_images_older_than: "7d"
+      keep_recent_images: 5
+
+# Validation and Testing
+validation:
+  # Cluster validation tests
+  tests:
+    - name: "dns-resolution"
+      command: "nslookup kubernetes.default.svc.cluster.local"
+      expected_result: "success"
+    
+    - name: "pod-to-pod-communication"
+      command: "kubectl run test-pod --image=busybox --rm -it -- ping 10.96.0.1"
+      expected_result: "success"
+    
+    - name: "gpu-detection"
+      command: "kubectl get nodes -o json | jq '.items[].status.capacity | select(.\"nvidia.com/gpu\"?)'"
+      expected_result: "gpu_count > 0"
+    
+    - name: "storage-provisioning"
+      command: "kubectl apply -f test-pvc.yaml && kubectl get pvc test-pvc"
+      expected_result: "Bound"
+    
+    - name: "load-balancer-connectivity"
+      command: "curl -I http://10.100.1.100"
+      expected_result: "HTTP 200"
+
+# Documentation and Runbooks
+documentation:
+  runbooks:
+    - name: "cluster-bootstrap"
+      path: "docs/runbooks/cluster-bootstrap.md"
+    - name: "node-maintenance"
+      path: "docs/runbooks/node-maintenance.md"
+    - name: "gpu-troubleshooting"
+      path: "docs/runbooks/gpu-troubleshooting.md"
+    - name: "backup-restore"
+      path: "docs/runbooks/backup-restore.md"
+  
+  architecture_diagrams:
+    - name: "network-topology"
+      path: "docs/diagrams/network-topology.png"
+    - name: "security-model"
+      path: "docs/diagrams/security-model.png"

@@ -1,0 +1,657 @@
+# AWS Compute Configuration for TextNLP Platform
+# Phase 3: Core Infrastructure Deployment
+
+apiVersion: v1
+kind: ComputeConfig
+metadata:
+  name: textnlp-aws-compute
+  version: "1.0"
+  environment: production
+  platform: aws
+
+# EKS Cluster Configuration
+eks_cluster:
+  name: "textnlp-production"
+  version: "1.28"
+  region: "us-east-1"
+  
+  # Cluster configuration
+  cluster_config:
+    endpoint_config:
+      private_access: true
+      public_access: true
+      public_access_cidrs: ["0.0.0.0/0"]
+    
+    logging:
+      enable:
+        - "api"
+        - "audit"
+        - "authenticator"
+        - "controllerManager"
+        - "scheduler"
+    
+    # Add-ons
+    addons:
+      - name: "vpc-cni"
+        version: "v1.15.1-eksbuild.1"
+      - name: "coredns"
+        version: "v1.10.1-eksbuild.4"
+      - name: "kube-proxy"
+        version: "v1.28.2-eksbuild.2"
+      - name: "aws-ebs-csi-driver"
+        version: "v1.24.0-eksbuild.1"
+      - name: "aws-efs-csi-driver"
+        version: "v1.7.0-eksbuild.1"
+
+# Node Groups Configuration
+node_groups:
+  # CPU Worker Nodes
+  cpu_workers:
+    name: "textnlp-cpu-workers"
+    instance_types:
+      - "m5.2xlarge"    # 8 vCPU, 32 GiB RAM
+      - "m5.4xlarge"    # 16 vCPU, 64 GiB RAM
+      - "c5.4xlarge"    # 16 vCPU, 32 GiB RAM
+    
+    capacity_type: "ON_DEMAND"
+    ami_type: "AL2_x86_64"
+    disk_size: 100
+    disk_type: "gp3"
+    
+    scaling_config:
+      desired_size: 3
+      max_size: 20
+      min_size: 2
+    
+    # Update configuration
+    update_config:
+      max_unavailable_percentage: 25
+    
+    # Instance configuration
+    instance_config:
+      key_name: "textnlp-keypair"
+      source_security_group_ids: []
+      
+      # User data for container runtime optimization
+      user_data: |
+        #!/bin/bash
+        /etc/eks/bootstrap.sh textnlp-production
+        # Optimize for NLP workloads
+        echo 'vm.max_map_count=262144' >> /etc/sysctl.conf
+        echo 'fs.file-max=2097152' >> /etc/sysctl.conf
+        sysctl -p
+    
+    # Labels and taints
+    labels:
+      node-type: "cpu"
+      workload: "general"
+      platform: "aws"
+    
+    # Resource configuration
+    resources:
+      requests:
+        cpu: "7"
+        memory: "28Gi"
+      limits:
+        cpu: "8"
+        memory: "32Gi"
+
+  # GPU Worker Nodes for ML Inference
+  gpu_inference_workers:
+    name: "textnlp-gpu-inference"
+    instance_types:
+      - "g4dn.xlarge"   # 1 NVIDIA T4, 4 vCPU, 16 GiB RAM
+      - "g4dn.2xlarge"  # 1 NVIDIA T4, 8 vCPU, 32 GiB RAM
+      - "g4dn.4xlarge"  # 1 NVIDIA T4, 16 vCPU, 64 GiB RAM
+    
+    capacity_type: "SPOT"  # Cost optimization for inference
+    ami_type: "AL2_x86_64_GPU"
+    disk_size: 200
+    disk_type: "gp3"
+    
+    scaling_config:
+      desired_size: 2
+      max_size: 10
+      min_size: 0  # Scale to zero when not needed
+    
+    # Spot configuration
+    spot_config:
+      max_price: "0.40"  # Maximum price per hour
+      spot_fleet_allocation: "diversified"
+    
+    # Instance configuration
+    instance_config:
+      key_name: "textnlp-keypair"
+      
+      # GPU-optimized user data
+      user_data: |
+        #!/bin/bash
+        /etc/eks/bootstrap.sh textnlp-production
+        # GPU optimizations
+        echo 'vm.max_map_count=262144' >> /etc/sysctl.conf
+        echo 'fs.file-max=2097152' >> /etc/sysctl.conf
+        sysctl -p
+        # NVIDIA persistence daemon
+        nvidia-persistenced --persistence-mode
+    
+    # Labels and taints
+    labels:
+      node-type: "gpu"
+      workload: "inference"
+      gpu-type: "nvidia-t4"
+      platform: "aws"
+    
+    taints:
+      - key: "nvidia.com/gpu"
+        value: "true"
+        effect: "NoSchedule"
+      - key: "inferloop.ai/gpu-inference"
+        value: "true"
+        effect: "NoSchedule"
+    
+    # Resource configuration
+    resources:
+      requests:
+        cpu: "3"
+        memory: "12Gi"
+        nvidia.com/gpu: "1"
+      limits:
+        cpu: "4"
+        memory: "16Gi"
+        nvidia.com/gpu: "1"
+
+  # GPU Worker Nodes for ML Training
+  gpu_training_workers:
+    name: "textnlp-gpu-training"
+    instance_types:
+      - "p3.2xlarge"    # 1 NVIDIA V100, 8 vCPU, 61 GiB RAM
+      - "p3.8xlarge"    # 4 NVIDIA V100, 32 vCPU, 244 GiB RAM
+      - "p4d.24xlarge"  # 8 NVIDIA A100, 96 vCPU, 1152 GiB RAM
+    
+    capacity_type: "SPOT"  # Cost optimization for training
+    ami_type: "AL2_x86_64_GPU"
+    disk_size: 500
+    disk_type: "gp3"
+    
+    scaling_config:
+      desired_size: 0   # Start with zero, scale on demand
+      max_size: 5
+      min_size: 0
+    
+    # Spot configuration
+    spot_config:
+      max_price: "3.00"  # Maximum price per hour for training
+      spot_fleet_allocation: "diversified"
+    
+    # Instance configuration
+    instance_config:
+      key_name: "textnlp-keypair"
+      
+      # Training-optimized user data
+      user_data: |
+        #!/bin/bash
+        /etc/eks/bootstrap.sh textnlp-production
+        # Training optimizations
+        echo 'vm.max_map_count=262144' >> /etc/sysctl.conf
+        echo 'fs.file-max=2097152' >> /etc/sysctl.conf
+        # Large memory allocation for training
+        echo 'vm.overcommit_memory=1' >> /etc/sysctl.conf
+        sysctl -p
+        # NVIDIA persistence and ECC
+        nvidia-persistenced --persistence-mode
+        nvidia-smi -e 1  # Enable ECC if supported
+    
+    # Labels and taints
+    labels:
+      node-type: "gpu"
+      workload: "training"
+      gpu-type: "nvidia-v100-a100"
+      platform: "aws"
+    
+    taints:
+      - key: "nvidia.com/gpu"
+        value: "true"
+        effect: "NoSchedule"
+      - key: "inferloop.ai/gpu-training"
+        value: "true"
+        effect: "NoSchedule"
+    
+    # Resource configuration
+    resources:
+      requests:
+        cpu: "7"
+        memory: "55Gi"
+        nvidia.com/gpu: "1"
+      limits:
+        cpu: "8"
+        memory: "61Gi"
+        nvidia.com/gpu: "1"
+
+# Auto Scaling Configuration
+autoscaling:
+  cluster_autoscaler:
+    enabled: true
+    version: "v1.28.2"
+    
+    # Scaling behavior
+    scale_down_delay_after_add: "10m"
+    scale_down_unneeded_time: "10m"
+    scale_down_utilization_threshold: 0.5
+    
+    # GPU-specific scaling
+    gpu_scaling:
+      scale_up_threshold: 0.8
+      scale_down_threshold: 0.2
+      metrics:
+        - "gpu_utilization"
+        - "gpu_memory_utilization"
+        - "pending_pods"
+    
+    # Cost optimization
+    cost_optimization:
+      prefer_spot_instances: true
+      balance_similar_node_groups: true
+      skip_nodes_with_local_storage: false
+      skip_nodes_with_system_pods: false
+
+  # Horizontal Pod Autoscaler (HPA)
+  hpa:
+    enabled: true
+    
+    # Metrics configuration
+    metrics:
+      - type: "Resource"
+        resource:
+          name: "cpu"
+          target:
+            type: "Utilization"
+            average_utilization: 70
+      
+      - type: "Resource"
+        resource:
+          name: "memory"
+          target:
+            type: "Utilization"
+            average_utilization: 80
+      
+      # Custom GPU metrics
+      - type: "External"
+        external:
+          metric:
+            name: "nvidia_gpu_utilization"
+          target:
+            type: "AverageValue"
+            average_value: "75"
+
+  # Vertical Pod Autoscaler (VPA)
+  vpa:
+    enabled: true
+    
+    # Update modes
+    update_modes:
+      cpu_workers: "Auto"
+      gpu_workers: "Off"  # Manual for GPU workloads
+    
+    # Resource policies
+    resource_policies:
+      min_allowed:
+        cpu: "100m"
+        memory: "128Mi"
+      max_allowed:
+        cpu: "32"
+        memory: "256Gi"
+        nvidia.com/gpu: "8"
+
+# Compute Optimization
+optimization:
+  # CPU optimization
+  cpu_optimization:
+    # NUMA topology awareness
+    numa_topology: true
+    cpu_manager_policy: "static"
+    
+    # CPU isolation for high-performance workloads
+    isolated_cpus: "2-7,10-15"  # Reserve CPUs for NLP processing
+    
+    # Power management
+    cpu_governor: "performance"
+    
+  # Memory optimization
+  memory_optimization:
+    # Huge pages for large models
+    hugepages:
+      enabled: true
+      size: "2Mi"
+      count: 1024
+    
+    # Memory allocation
+    memory_allocation:
+      default_memory_request: "4Gi"
+      default_memory_limit: "8Gi"
+    
+    # Swap configuration
+    swap:
+      enabled: false  # Disable swap for Kubernetes
+  
+  # GPU optimization
+  gpu_optimization:
+    # NVIDIA settings
+    nvidia_settings:
+      persistence_mode: true
+      power_management: "default"
+      memory_clock: "max_performance"
+      compute_mode: "DEFAULT"
+    
+    # Multi-Instance GPU (MIG) configuration
+    mig:
+      enabled: false  # Disable for maximum performance per job
+    
+    # GPU memory management
+    gpu_memory:
+      allocation_strategy: "best_fit"
+      memory_fraction: 0.9
+      allow_growth: true
+
+# Container Runtime Configuration
+container_runtime:
+  # containerd configuration
+  containerd:
+    version: "1.7.1"
+    
+    # Runtime configuration
+    runtime_config:
+      default_runtime: "runc"
+      
+      # NVIDIA container runtime for GPU nodes
+      nvidia_runtime:
+        path: "/usr/bin/nvidia-container-runtime"
+        options:
+          systemd-cgroup: true
+    
+    # Registry configuration
+    registry:
+      mirrors:
+        "docker.io":
+          endpoint: ["https://registry-1.docker.io"]
+      
+      configs:
+        "textnlp-registry.aws":
+          auth:
+            username: "AWS"
+            password: "ECR_TOKEN"
+    
+    # Plugin configuration
+    plugins:
+      cri:
+        systemd_cgroup: true
+        max_container_log_line_size: 16384
+        
+      # GPU plugin
+      nvidia:
+        default_runtime: "nvidia"
+        runtime_args: []
+
+# Monitoring and Observability
+monitoring:
+  # Node monitoring
+  node_monitoring:
+    enabled: true
+    
+    # Metrics collection
+    metrics:
+      - "cpu_usage"
+      - "memory_usage"
+      - "disk_usage"
+      - "network_io"
+      - "gpu_utilization"
+      - "gpu_memory"
+      - "gpu_temperature"
+    
+    # Collection interval
+    scrape_interval: "15s"
+    
+  # Container monitoring
+  container_monitoring:
+    enabled: true
+    
+    # Resource metrics
+    resource_metrics:
+      - "container_cpu_usage"
+      - "container_memory_usage"
+      - "container_network_io"
+      - "container_fs_usage"
+    
+    # Application metrics
+    application_metrics:
+      - "model_inference_latency"
+      - "tokens_per_second"
+      - "request_rate"
+      - "error_rate"
+
+# Security Configuration
+security:
+  # Pod security standards
+  pod_security:
+    enforce: "restricted"
+    audit: "restricted"
+    warn: "restricted"
+  
+  # Security contexts
+  security_contexts:
+    run_as_non_root: true
+    run_as_user: 1000
+    run_as_group: 1000
+    fs_group: 1000
+    
+    # Capabilities
+    capabilities:
+      drop: ["ALL"]
+      add: []
+    
+    # SELinux
+    selinux_options:
+      level: "s0:c123,c456"
+  
+  # Network policies
+  network_policies:
+    default_deny: true
+    
+    # Allow specific communication
+    allowed_egress:
+      - to: []
+        ports:
+          - protocol: "TCP"
+            port: 53
+          - protocol: "UDP"
+            port: 53
+    
+    allowed_ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                name: "textnlp-api"
+        ports:
+          - protocol: "TCP"
+            port: 8080
+
+# Cost Management
+cost_management:
+  # Instance cost optimization
+  instance_optimization:
+    # Spot instance configuration
+    spot_instances:
+      enabled: true
+      max_spot_percentage: 80
+      
+      # Spot instance diversification
+      diversification:
+        instance_types: 4
+        availability_zones: 3
+    
+    # Reserved instances
+    reserved_instances:
+      enabled: true
+      term: "1year"
+      offering_class: "standard"
+      payment_option: "partial_upfront"
+    
+    # Savings plans
+    savings_plans:
+      enabled: true
+      plan_type: "compute"
+      payment_option: "partial_upfront"
+      upfront_percentage: 50
+  
+  # Resource optimization
+  resource_optimization:
+    # Right-sizing
+    right_sizing:
+      enabled: true
+      analysis_period: "7d"
+      cpu_threshold: 20
+      memory_threshold: 20
+    
+    # Scheduled scaling
+    scheduled_scaling:
+      enabled: true
+      
+      # Business hours scaling
+      business_hours:
+        scale_up:
+          schedule: "0 8 * * 1-5"  # 8 AM, Monday-Friday
+          min_capacity: 3
+        scale_down:
+          schedule: "0 18 * * 1-5"  # 6 PM, Monday-Friday
+          min_capacity: 1
+      
+      # Weekend scaling
+      weekend:
+        scale_down:
+          schedule: "0 20 * * 5"  # 8 PM Friday
+          min_capacity: 1
+        scale_up:
+          schedule: "0 8 * * 1"   # 8 AM Monday
+          min_capacity: 2
+
+# Disaster Recovery
+disaster_recovery:
+  # Multi-AZ deployment
+  multi_az:
+    enabled: true
+    availability_zones:
+      - "us-east-1a"
+      - "us-east-1b"
+      - "us-east-1c"
+  
+  # Cross-region backup
+  cross_region_backup:
+    enabled: true
+    backup_regions:
+      - "us-west-2"
+      - "eu-west-1"
+  
+  # Backup configuration
+  backup:
+    # Node configuration backup
+    node_config_backup:
+      enabled: true
+      frequency: "daily"
+      retention: "30d"
+    
+    # Persistent volume backup
+    pv_backup:
+      enabled: true
+      frequency: "daily"
+      retention: "90d"
+      cross_region: true
+
+# Performance Tuning
+performance_tuning:
+  # Kernel tuning
+  kernel_tuning:
+    # Network optimizations
+    network:
+      tcp_congestion_control: "bbr"
+      tcp_window_scaling: true
+      tcp_timestamps: true
+      tcp_sack: true
+      
+      # Buffer sizes
+      rmem_max: 16777216
+      wmem_max: 16777216
+      rmem_default: 262144
+      wmem_default: 262144
+    
+    # File system optimizations
+    filesystem:
+      max_open_files: 1048576
+      max_map_count: 262144
+      
+      # I/O scheduling
+      io_scheduler: "mq-deadline"
+      read_ahead_kb: 128
+  
+  # Container optimizations
+  container_optimizations:
+    # Image pulling
+    image_pull:
+      parallel_pulls: 10
+      max_pull_procs: 3
+    
+    # Container lifecycle
+    lifecycle:
+      startup_probe_failure_threshold: 30
+      liveness_probe_timeout: 30
+      readiness_probe_timeout: 5
+
+# Validation and Testing
+validation:
+  # Health checks
+  health_checks:
+    node_health:
+      enabled: true
+      check_interval: "30s"
+      failure_threshold: 3
+    
+    cluster_health:
+      enabled: true
+      check_interval: "60s"
+      components:
+        - "etcd"
+        - "kube-apiserver"
+        - "kube-controller-manager"
+        - "kube-scheduler"
+    
+    gpu_health:
+      enabled: true
+      check_interval: "60s"
+      metrics:
+        - "gpu_utilization"
+        - "gpu_memory"
+        - "gpu_temperature"
+  
+  # Performance testing
+  performance_testing:
+    # Load testing
+    load_testing:
+      enabled: true
+      test_scenarios:
+        - name: "cpu_stress"
+          duration: "5m"
+          target_cpu: 80
+        - name: "memory_stress"
+          duration: "5m"
+          target_memory: 80
+        - name: "gpu_stress"
+          duration: "5m"
+          target_gpu: 90
+    
+    # Benchmarking
+    benchmarking:
+      enabled: true
+      benchmarks:
+        - "cpu_benchmark"
+        - "memory_benchmark"
+        - "gpu_benchmark"
+        - "network_benchmark"
+        - "storage_benchmark"

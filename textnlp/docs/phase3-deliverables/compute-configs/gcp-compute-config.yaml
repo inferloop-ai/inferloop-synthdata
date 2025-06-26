@@ -1,0 +1,880 @@
+# GCP Compute Configuration for TextNLP Platform
+# Phase 3: Core Infrastructure Deployment
+
+apiVersion: v1
+kind: ComputeConfig
+metadata:
+  name: textnlp-gcp-compute
+  version: "1.0"
+  environment: production
+  platform: gcp
+
+# GKE Cluster Configuration
+gke_cluster:
+  name: "textnlp-production"
+  location: "us-central1"
+  location_type: "regional"  # Regional for HA
+  
+  # Cluster configuration
+  cluster_config:
+    initial_node_count: 1  # Per zone
+    remove_default_node_pool: true
+    
+    # Network configuration
+    network: "textnlp-vpc"
+    subnetwork: "textnlp-subnet"
+    
+    # IP allocation
+    ip_allocation_policy:
+      cluster_secondary_range_name: "pods"
+      services_secondary_range_name: "services"
+    
+    # Workload Identity
+    workload_identity_config:
+      workload_pool: "textnlp-prod-001.svc.id.goog"
+    
+    # Private cluster configuration
+    private_cluster_config:
+      enable_private_nodes: true
+      enable_private_endpoint: false
+      master_ipv4_cidr_block: "172.16.0.32/28"
+    
+    # Master authorized networks
+    master_authorized_networks_config:
+      enabled: true
+      cidr_blocks:
+        - display_name: "Office Network"
+          cidr_block: "203.0.113.0/24"
+        - display_name: "VPN Network"
+          cidr_block: "10.0.0.0/8"
+    
+    # Add-ons
+    addons_config:
+      http_load_balancing:
+        disabled: false
+      horizontal_pod_autoscaling:
+        disabled: false
+      kubernetes_dashboard:
+        disabled: true
+      network_policy_config:
+        disabled: false
+      istio_config:
+        disabled: false
+        auth: "AUTH_MUTUAL_TLS"
+      cloud_run_config:
+        disabled: false
+      gce_persistent_disk_csi_driver_config:
+        enabled: true
+    
+    # Binary authorization
+    binary_authorization:
+      enabled: true
+    
+    # Logging and monitoring
+    logging_service: "logging.googleapis.com/kubernetes"
+    monitoring_service: "monitoring.googleapis.com/kubernetes"
+    
+    # Maintenance policy
+    maintenance_policy:
+      daily_maintenance_window:
+        start_time: "03:00"  # 3 AM UTC
+    
+    # Resource usage export
+    resource_usage_export_config:
+      enable_network_egress_metering: true
+      enable_resource_consumption_metering: true
+      bigquery_destination:
+        dataset_id: "textnlp_cluster_usage"
+
+# Node Pools Configuration
+node_pools:
+  # CPU Worker Pool
+  cpu_workers:
+    name: "textnlp-cpu-workers"
+    location: "us-central1"
+    
+    # Node configuration
+    node_config:
+      machine_type: "e2-standard-8"  # 8 vCPU, 32 GB RAM
+      disk_size_gb: 100
+      disk_type: "pd-ssd"
+      image_type: "COS_CONTAINERD"
+      
+      # Service account
+      service_account: "textnlp-gke-sa@textnlp-prod-001.iam.gserviceaccount.com"
+      
+      # OAuth scopes
+      oauth_scopes:
+        - "https://www.googleapis.com/auth/cloud-platform"
+      
+      # Metadata
+      metadata:
+        disable-legacy-endpoints: "true"
+      
+      # Labels
+      labels:
+        node-type: "cpu"
+        workload: "general"
+        platform: "gcp"
+      
+      # Resource reservations
+      reservation_affinity:
+        consume_reservation_type: "ANY_RESERVATION"
+      
+      # Shielded instance configuration
+      shielded_instance_config:
+        enable_secure_boot: true
+        enable_integrity_monitoring: true
+    
+    # Auto scaling
+    autoscaling:
+      enabled: true
+      min_node_count: 3
+      max_node_count: 20
+      location_policy: "BALANCED"
+    
+    # Management
+    management:
+      auto_repair: true
+      auto_upgrade: true
+      
+      # Upgrade settings
+      upgrade_settings:
+        max_surge: 1
+        max_unavailable: 1
+        strategy: "SURGE"
+    
+    # Initial node count
+    initial_node_count: 3
+
+  # GPU Inference Pool
+  gpu_inference_workers:
+    name: "textnlp-gpu-inference"
+    location: "us-central1"
+    
+    # Node configuration
+    node_config:
+      machine_type: "n1-standard-4"  # 4 vCPU, 15 GB RAM
+      
+      # GPU configuration
+      guest_accelerators:
+        - type: "nvidia-tesla-t4"
+          count: 1
+          gpu_partition_size: ""  # Use full GPU
+          gpu_sharing_config:
+            max_shared_clients_per_gpu: 1
+      
+      disk_size_gb: 200
+      disk_type: "pd-ssd"
+      image_type: "COS_CONTAINERD"
+      
+      # Preemptible for cost optimization
+      preemptible: true
+      
+      # Service account
+      service_account: "textnlp-gke-sa@textnlp-prod-001.iam.gserviceaccount.com"
+      
+      # OAuth scopes
+      oauth_scopes:
+        - "https://www.googleapis.com/auth/cloud-platform"
+      
+      # Metadata
+      metadata:
+        disable-legacy-endpoints: "true"
+      
+      # Labels
+      labels:
+        node-type: "gpu"
+        workload: "inference"
+        gpu-type: "nvidia-t4"
+        platform: "gcp"
+      
+      # Taints
+      taints:
+        - key: "nvidia.com/gpu"
+          value: "true"
+          effect: "NO_SCHEDULE"
+        - key: "inferloop.ai/gpu-inference"
+          value: "true"
+          effect: "NO_SCHEDULE"
+      
+      # Shielded instance configuration
+      shielded_instance_config:
+        enable_secure_boot: true
+        enable_integrity_monitoring: true
+    
+    # Auto scaling
+    autoscaling:
+      enabled: true
+      min_node_count: 0  # Scale to zero when not needed
+      max_node_count: 10
+      location_policy: "BALANCED"
+    
+    # Management
+    management:
+      auto_repair: true
+      auto_upgrade: false  # Manual upgrade for GPU nodes
+    
+    # Initial node count
+    initial_node_count: 1
+
+  # GPU Training Pool
+  gpu_training_workers:
+    name: "textnlp-gpu-training"
+    location: "us-central1"
+    
+    # Node configuration
+    node_config:
+      machine_type: "a2-highgpu-1g"  # 12 vCPU, 85 GB RAM
+      
+      # GPU configuration
+      guest_accelerators:
+        - type: "nvidia-tesla-a100"
+          count: 1
+          gpu_partition_size: ""  # Use full GPU
+      
+      disk_size_gb: 500
+      disk_type: "pd-ssd"
+      image_type: "COS_CONTAINERD"
+      
+      # Preemptible for cost optimization
+      preemptible: true
+      spot: true
+      
+      # Service account
+      service_account: "textnlp-gke-sa@textnlp-prod-001.iam.gserviceaccount.com"
+      
+      # OAuth scopes
+      oauth_scopes:
+        - "https://www.googleapis.com/auth/cloud-platform"
+      
+      # Metadata
+      metadata:
+        disable-legacy-endpoints: "true"
+      
+      # Labels
+      labels:
+        node-type: "gpu"
+        workload: "training"
+        gpu-type: "nvidia-a100"
+        platform: "gcp"
+      
+      # Taints
+      taints:
+        - key: "nvidia.com/gpu"
+          value: "true"
+          effect: "NO_SCHEDULE"
+        - key: "inferloop.ai/gpu-training"
+          value: "true"
+          effect: "NO_SCHEDULE"
+      
+      # Shielded instance configuration
+      shielded_instance_config:
+        enable_secure_boot: true
+        enable_integrity_monitoring: true
+      
+      # Local SSD for high-performance training
+      local_ssd_count: 1
+    
+    # Auto scaling
+    autoscaling:
+      enabled: true
+      min_node_count: 0  # Scale to zero when not needed
+      max_node_count: 5
+      location_policy: "BALANCED"
+    
+    # Management
+    management:
+      auto_repair: true
+      auto_upgrade: false  # Manual upgrade for GPU nodes
+    
+    # Initial node count
+    initial_node_count: 0
+
+# Auto Scaling Configuration
+autoscaling:
+  # Cluster autoscaler
+  cluster_autoscaler:
+    enabled: true
+    
+    # Autoscaling profile
+    autoscaling_profile: "OPTIMIZE_UTILIZATION"
+    
+    # Resource limits
+    resource_limits:
+      - resource_type: "cpu"
+        maximum: 1000
+        minimum: 1
+      - resource_type: "memory"
+        maximum: 4000
+        minimum: 1
+      - resource_type: "nvidia-tesla-t4"
+        maximum: 16
+        minimum: 0
+      - resource_type: "nvidia-tesla-a100"
+        maximum: 8
+        minimum: 0
+    
+    # Auto provisioning
+    auto_provisioning:
+      enabled: true
+      
+      # Auto provisioning defaults
+      auto_provisioning_defaults:
+        service_account: "textnlp-gke-sa@textnlp-prod-001.iam.gserviceaccount.com"
+        oauth_scopes:
+          - "https://www.googleapis.com/auth/cloud-platform"
+        
+        # Shielded instance config
+        shielded_instance_config:
+          enable_secure_boot: true
+          enable_integrity_monitoring: true
+        
+        # Management
+        management:
+          auto_repair: true
+          auto_upgrade: true
+        
+        # Disk config
+        disk_size_gb: 100
+        disk_type: "pd-ssd"
+        image_type: "COS_CONTAINERD"
+
+  # Horizontal Pod Autoscaler
+  horizontal_pod_autoscaler:
+    enabled: true
+    
+    # Default configuration
+    default_config:
+      cpu_utilization: 70
+      memory_utilization: 80
+      
+      # Scale behavior
+      scale_up_behavior:
+        stabilization_window_seconds: 60
+        policies:
+          - type: "Pods"
+            value: 2
+            period_seconds: 60
+      
+      scale_down_behavior:
+        stabilization_window_seconds: 300
+        policies:
+          - type: "Percent"
+            value: 10
+            period_seconds: 60
+
+  # Vertical Pod Autoscaler
+  vertical_pod_autoscaler:
+    enabled: true
+    
+    # Update modes by workload type
+    update_modes:
+      cpu_workloads: "Auto"
+      gpu_workloads: "Off"  # Manual for GPU workloads
+    
+    # Resource policies
+    resource_policies:
+      min_allowed:
+        cpu: "100m"
+        memory: "128Mi"
+      max_allowed:
+        cpu: "32"
+        memory: "256Gi"
+        nvidia.com/gpu: "8"
+
+# GPU Configuration
+gpu_configuration:
+  # NVIDIA GPU Operator
+  nvidia_gpu_operator:
+    enabled: true
+    version: "23.9.1"
+    
+    # Operator configuration
+    operator_config:
+      driver:
+        enabled: false  # GKE manages drivers
+      toolkit:
+        enabled: true
+        version: "1.14.3"
+      device_plugin:
+        enabled: true
+        config:
+          sharing:
+            strategy: "time-slicing"
+            replicas: 1  # No sharing for production
+      dcgm:
+        enabled: true
+      dcgm_exporter:
+        enabled: true
+        service_monitor:
+          enabled: true
+      gfd:  # GPU Feature Discovery
+        enabled: true
+      mig:  # Multi-Instance GPU
+        strategy: "single"  # Single mode for maximum performance
+      node_status_exporter:
+        enabled: true
+      validator:
+        plugin:
+          enabled: true
+        operator:
+          enabled: true
+
+  # GPU scheduling
+  gpu_scheduling:
+    # Node selector for GPU workloads
+    node_selector:
+      accelerator: "nvidia-tesla-t4"
+    
+    # GPU resource allocation
+    resource_allocation:
+      default_gpu_limit: 1
+      default_gpu_request: 1
+    
+    # GPU sharing (disabled for production)
+    gpu_sharing:
+      enabled: false
+      time_slicing_replicas: 1
+
+# Monitoring and Observability
+monitoring:
+  # Google Cloud Monitoring
+  cloud_monitoring:
+    enabled: true
+    
+    # Metrics collection
+    metrics:
+      - "container/cpu/utilization"
+      - "container/memory/utilization"
+      - "container/accelerator/duty_cycle"
+      - "container/accelerator/memory_used"
+      - "pod/network/received_bytes_count"
+      - "pod/network/sent_bytes_count"
+    
+    # Custom metrics
+    custom_metrics:
+      - name: "model_inference_latency"
+        description: "Model inference latency in milliseconds"
+        type: "gauge"
+      - name: "tokens_per_second"
+        description: "Token generation rate"
+        type: "gauge"
+      - name: "gpu_memory_efficiency"
+        description: "GPU memory utilization efficiency"
+        type: "gauge"
+    
+    # Alerting policies
+    alerting_policies:
+      - name: "high_gpu_utilization"
+        condition: "container/accelerator/duty_cycle > 0.9"
+        duration: "300s"
+        notification_channels: ["slack", "email"]
+      
+      - name: "high_memory_usage"
+        condition: "container/memory/utilization > 0.8"
+        duration: "300s"
+        notification_channels: ["email"]
+      
+      - name: "node_not_ready"
+        condition: "kubernetes/node/ready_condition = false"
+        duration: "60s"
+        notification_channels: ["pagerduty", "slack"]
+
+  # Prometheus integration
+  prometheus:
+    enabled: true
+    
+    # ServiceMonitor for custom metrics
+    service_monitors:
+      - name: "gpu-metrics"
+        selector:
+          matchLabels:
+            app: "dcgm-exporter"
+        endpoints:
+          - port: "metrics"
+            interval: "30s"
+      
+      - name: "node-metrics"
+        selector:
+          matchLabels:
+            app: "node-exporter"
+        endpoints:
+          - port: "metrics"
+            interval: "30s"
+
+# Security Configuration
+security:
+  # Pod Security Standards
+  pod_security_standards:
+    enforce: "restricted"
+    audit: "restricted"
+    warn: "restricted"
+    
+    # Exemptions for system workloads
+    exemptions:
+      usernames: []
+      runtime_classes: []
+      namespaces: ["kube-system", "gke-system"]
+  
+  # Binary Authorization
+  binary_authorization:
+    enabled: true
+    
+    # Admission policy
+    admission_whitelist_patterns:
+      - name_pattern: "gcr.io/textnlp-prod-001/*"
+      - name_pattern: "us-central1-docker.pkg.dev/textnlp-prod-001/*"
+    
+    # Default admission rule
+    default_admission_rule:
+      evaluation_mode: "REQUIRE_ATTESTATION"
+      enforcement_mode: "ENFORCED_BLOCK_AND_AUDIT_LOG"
+      
+      # Require attestations
+      require_attestations_by:
+        - "projects/textnlp-prod-001/attestors/ci-cd-attestor"
+  
+  # Workload Identity
+  workload_identity:
+    enabled: true
+    
+    # Service account mappings
+    service_account_mappings:
+      - kubernetes_sa: "textnlp-api-sa"
+        namespace: "textnlp-api"
+        google_sa: "textnlp-api-sa@textnlp-prod-001.iam.gserviceaccount.com"
+      
+      - kubernetes_sa: "textnlp-gpu-sa"
+        namespace: "textnlp-gpu"
+        google_sa: "textnlp-gpu-sa@textnlp-prod-001.iam.gserviceaccount.com"
+  
+  # Network security
+  network_security:
+    # Private Google Access
+    private_google_access: true
+    
+    # Authorized networks
+    authorized_networks:
+      - "203.0.113.0/24"  # Office network
+      - "10.0.0.0/8"      # VPN network
+    
+    # VPC-native networking
+    vpc_native: true
+    
+    # Network policies
+    network_policies:
+      default_deny: true
+      
+      # Ingress rules
+      ingress_rules:
+        - from:
+            - namespace_selector:
+                match_labels:
+                  name: "textnlp-api"
+          ports:
+            - protocol: "TCP"
+              port: 8080
+        
+        - from:
+            - namespace_selector:
+                match_labels:
+                  name: "monitoring"
+          ports:
+            - protocol: "TCP"
+              port: 9090
+
+# Cost Optimization
+cost_optimization:
+  # Preemptible instances
+  preemptible_instances:
+    enabled: true
+    percentage: 80  # 80% preemptible for non-critical workloads
+    
+    # Preemption handling
+    preemption_handling:
+      graceful_shutdown_timeout: "30s"
+      restart_policy: "Always"
+      checkpoint_frequency: "5m"
+  
+  # Spot instances
+  spot_instances:
+    enabled: true
+    max_price_percentage: 60  # Maximum 60% of on-demand price
+    
+    # Spot placement policies
+    placement_policies:
+      - placement_policy_name: "textnlp-spot-policy"
+        vm_count: 10
+        availability_domain_count: 3
+  
+  # Committed use discounts
+  committed_use_discounts:
+    enabled: true
+    
+    # CPU commitments
+    cpu_commitments:
+      - region: "us-central1"
+        resource_type: "VCPU"
+        amount: 100
+        plan: "TWELVE_MONTH"
+    
+    # Memory commitments
+    memory_commitments:
+      - region: "us-central1"
+        resource_type: "MEMORY"
+        amount: 400  # GB
+        plan: "TWELVE_MONTH"
+  
+  # Resource optimization
+  resource_optimization:
+    # Right-sizing recommendations
+    right_sizing:
+      enabled: true
+      observation_period: "7d"
+      
+      # Thresholds
+      cpu_threshold: 20  # Recommend smaller if CPU < 20%
+      memory_threshold: 20  # Recommend smaller if memory < 20%
+    
+    # Idle resource detection
+    idle_resource_detection:
+      enabled: true
+      idle_threshold: "5%"
+      idle_duration: "24h"
+    
+    # Scheduled scaling
+    scheduled_scaling:
+      enabled: true
+      
+      # Business hours
+      business_hours:
+        timezone: "America/New_York"
+        scale_up:
+          schedule: "0 8 * * 1-5"  # 8 AM weekdays
+          min_replicas: 3
+        scale_down:
+          schedule: "0 18 * * 1-5"  # 6 PM weekdays
+          min_replicas: 1
+
+# Disaster Recovery
+disaster_recovery:
+  # Multi-regional setup
+  multi_regional:
+    enabled: true
+    
+    # Primary region
+    primary_region: "us-central1"
+    
+    # Secondary regions
+    secondary_regions:
+      - "us-east1"
+      - "europe-west1"
+    
+    # Replication strategy
+    replication_strategy: "async"
+    recovery_time_objective: "4h"
+    recovery_point_objective: "1h"
+  
+  # Backup configuration
+  backup:
+    # Persistent disk snapshots
+    disk_snapshots:
+      enabled: true
+      schedule: "0 2 * * *"  # Daily at 2 AM
+      retention_days: 30
+      
+      # Cross-regional snapshots
+      cross_regional: true
+      snapshot_regions:
+        - "us-east1"
+        - "europe-west1"
+    
+    # Configuration backup
+    config_backup:
+      enabled: true
+      backup_location: "gs://textnlp-config-backup"
+      schedule: "0 1 * * *"  # Daily at 1 AM
+      retention_days: 90
+  
+  # Cluster restore procedures
+  cluster_restore:
+    # Automated restore
+    automated_restore:
+      enabled: true
+      trigger_conditions:
+        - "cluster_unavailable_duration > 30m"
+        - "master_nodes_down > 50%"
+    
+    # Manual restore procedures
+    manual_restore:
+      runbooks:
+        - "docs/runbooks/cluster-restore.md"
+        - "docs/runbooks/data-restore.md"
+        - "docs/runbooks/network-restore.md"
+
+# Performance Optimization
+performance_optimization:
+  # Node performance tuning
+  node_tuning:
+    # CPU optimization
+    cpu_optimization:
+      cpu_governor: "performance"
+      cpu_scaling: "performance"
+      numa_balancing: false
+    
+    # Memory optimization
+    memory_optimization:
+      transparent_hugepages: "never"
+      vm_swappiness: 1
+      vm_dirty_ratio: 15
+    
+    # Network optimization
+    network_optimization:
+      tcp_congestion_control: "bbr"
+      tcp_window_scaling: true
+      tcp_timestamps: true
+      
+      # Buffer tuning
+      rmem_max: 16777216
+      wmem_max: 16777216
+  
+  # Container optimization
+  container_optimization:
+    # Image optimization
+    image_optimization:
+      compression: true
+      layer_caching: true
+      multi_stage_builds: true
+    
+    # Runtime optimization
+    runtime_optimization:
+      container_runtime: "containerd"
+      runtime_class: "gvisor"  # For enhanced security
+      
+      # Resource limits
+      default_limits:
+        cpu: "2"
+        memory: "4Gi"
+        ephemeral_storage: "10Gi"
+  
+  # GPU optimization
+  gpu_optimization:
+    # CUDA optimization
+    cuda_optimization:
+      cuda_version: "11.8"
+      cudnn_version: "8.7"
+      
+      # Memory optimization
+      cuda_memory_pool: true
+      memory_fraction: 0.9
+    
+    # Model optimization
+    model_optimization:
+      model_parallelism: true
+      tensor_parallelism: true
+      pipeline_parallelism: false
+      
+      # Quantization
+      quantization:
+        int8: true
+        fp16: true
+        dynamic: true
+
+# Validation and Testing
+validation:
+  # Health checks
+  health_checks:
+    cluster_health:
+      enabled: true
+      check_interval: "60s"
+      timeout: "30s"
+      
+      # Components to check
+      components:
+        - "kube-apiserver"
+        - "etcd"
+        - "kube-controller-manager"
+        - "kube-scheduler"
+        - "kubelet"
+    
+    node_health:
+      enabled: true
+      check_interval: "30s"
+      timeout: "10s"
+      
+      # Node conditions
+      conditions:
+        - "Ready"
+        - "MemoryPressure"
+        - "DiskPressure"
+        - "PIDPressure"
+        - "NetworkUnavailable"
+    
+    gpu_health:
+      enabled: true
+      check_interval: "60s"
+      timeout: "30s"
+      
+      # GPU metrics to check
+      metrics:
+        - "gpu_utilization"
+        - "gpu_memory_used"
+        - "gpu_temperature"
+        - "gpu_power_draw"
+  
+  # Performance testing
+  performance_testing:
+    # Load testing
+    load_testing:
+      enabled: true
+      
+      # Test scenarios
+      scenarios:
+        - name: "cpu_intensive"
+          duration: "10m"
+          target_cpu: 80
+          concurrent_requests: 100
+        
+        - name: "memory_intensive"
+          duration: "10m"
+          target_memory: 80
+          data_size: "1Gi"
+        
+        - name: "gpu_intensive"
+          duration: "10m"
+          target_gpu: 90
+          model_size: "large"
+    
+    # Benchmark testing
+    benchmark_testing:
+      enabled: true
+      
+      # Benchmarks to run
+      benchmarks:
+        - "sysbench_cpu"
+        - "sysbench_memory"
+        - "fio_disk"
+        - "iperf3_network"
+        - "nvidia_smi_gpu"
+      
+      # Benchmark schedule
+      schedule: "0 3 * * 0"  # Weekly on Sunday at 3 AM
+  
+  # Chaos engineering
+  chaos_engineering:
+    enabled: false  # Enable after stable operation
+    
+    # Chaos experiments
+    experiments:
+      - name: "node_failure"
+        frequency: "weekly"
+        scope: "single_node"
+      
+      - name: "network_partition"
+        frequency: "monthly"
+        scope: "single_zone"
+      
+      - name: "resource_exhaustion"
+        frequency: "weekly"
+        scope: "single_pod"

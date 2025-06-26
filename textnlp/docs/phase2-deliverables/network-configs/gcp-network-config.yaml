@@ -1,0 +1,546 @@
+# GCP Network Configuration for TextNLP Platform
+# Phase 2: Foundation Setup
+
+apiVersion: v1
+kind: GCPNetworkConfig
+metadata:
+  name: textnlp-gcp-network
+  project: textnlp-prod-001
+  region: us-central1
+  environment: production
+
+# VPC Network
+vpc_network:
+  name: "textnlp-vpc"
+  description: "TextNLP platform VPC network"
+  routing_mode: "REGIONAL"
+  auto_create_subnetworks: false
+  mtu: 1460
+  
+  labels:
+    project: "textnlp"
+    environment: "production"
+    managed-by: "textnlp-platform"
+    cost-center: "ai-ml"
+
+# Subnets
+subnets:
+  # Application subnet
+  application:
+    name: "textnlp-app-subnet"
+    ip_cidr_range: "10.1.0.0/24"
+    region: "us-central1"
+    description: "Subnet for TextNLP application workloads"
+    private_ip_google_access: true
+    
+    secondary_ip_ranges:
+      - range_name: "pods"
+        ip_cidr_range: "10.1.64.0/18"  # 16384 IPs for pods
+      - range_name: "services"
+        ip_cidr_range: "10.1.128.0/20"  # 4096 IPs for services
+    
+    log_config:
+      enable: true
+      aggregation_interval: "INTERVAL_5_SEC"
+      flow_sampling: 0.5
+      metadata: "INCLUDE_ALL_METADATA"
+  
+  # GPU subnet for ML workloads
+  gpu:
+    name: "textnlp-gpu-subnet"
+    ip_cidr_range: "10.1.1.0/24"
+    region: "us-central1"
+    description: "Subnet for GPU-accelerated ML workloads"
+    private_ip_google_access: true
+    
+    secondary_ip_ranges:
+      - range_name: "gpu-pods"
+        ip_cidr_range: "10.1.192.0/18"  # 16384 IPs for GPU pods
+    
+    log_config:
+      enable: true
+      aggregation_interval: "INTERVAL_5_SEC"
+      flow_sampling: 1.0  # Full sampling for GPU traffic
+      metadata: "INCLUDE_ALL_METADATA"
+  
+  # Database subnet
+  database:
+    name: "textnlp-db-subnet"
+    ip_cidr_range: "10.1.2.0/24"
+    region: "us-central1"
+    description: "Subnet for database services"
+    private_ip_google_access: true
+    
+    log_config:
+      enable: true
+      aggregation_interval: "INTERVAL_10_SEC"
+      flow_sampling: 0.1
+      metadata: "INCLUDE_ALL_METADATA"
+  
+  # Management subnet
+  management:
+    name: "textnlp-mgmt-subnet"
+    ip_cidr_range: "10.1.3.0/24"
+    region: "us-central1"
+    description: "Subnet for management and monitoring services"
+    private_ip_google_access: true
+
+# Firewall Rules
+firewall_rules:
+  # Allow internal communication
+  allow_internal:
+    name: "textnlp-allow-internal"
+    description: "Allow internal communication within VPC"
+    direction: "INGRESS"
+    priority: 1000
+    source_ranges:
+      - "10.1.0.0/16"
+    allowed:
+      - protocol: "tcp"
+        ports: ["0-65535"]
+      - protocol: "udp"
+        ports: ["0-65535"]
+      - protocol: "icmp"
+    target_tags:
+      - "textnlp-internal"
+  
+  # Allow SSH from IAP
+  allow_ssh_iap:
+    name: "textnlp-allow-ssh-iap"
+    description: "Allow SSH through Identity-Aware Proxy"
+    direction: "INGRESS"
+    priority: 1000
+    source_ranges:
+      - "35.235.240.0/20"  # IAP IP range
+    allowed:
+      - protocol: "tcp"
+        ports: ["22"]
+    target_tags:
+      - "textnlp-ssh"
+  
+  # Allow load balancer to app servers
+  allow_lb_to_app:
+    name: "textnlp-allow-lb-to-app"
+    description: "Allow load balancer traffic to application servers"
+    direction: "INGRESS"
+    priority: 1000
+    source_tags:
+      - "textnlp-lb"
+    allowed:
+      - protocol: "tcp"
+        ports: ["80", "443", "8000"]
+    target_tags:
+      - "textnlp-app"
+  
+  # Allow app to GPU workers
+  allow_app_to_gpu:
+    name: "textnlp-allow-app-to-gpu"
+    description: "Allow application traffic to GPU workers"
+    direction: "INGRESS"
+    priority: 1000
+    source_tags:
+      - "textnlp-app"
+    allowed:
+      - protocol: "tcp"
+        ports: ["8080", "50051"]  # gRPC
+    target_tags:
+      - "textnlp-gpu"
+  
+  # Allow app to database
+  allow_app_to_db:
+    name: "textnlp-allow-app-to-db"
+    description: "Allow application traffic to databases"
+    direction: "INGRESS"
+    priority: 1000
+    source_tags:
+      - "textnlp-app"
+      - "textnlp-gpu"
+    allowed:
+      - protocol: "tcp"
+        ports: ["5432", "6379"]  # PostgreSQL, Redis
+    target_tags:
+      - "textnlp-db"
+  
+  # Allow health checks
+  allow_health_checks:
+    name: "textnlp-allow-health-checks"
+    description: "Allow Google Cloud health checks"
+    direction: "INGRESS"
+    priority: 1000
+    source_ranges:
+      - "130.211.0.0/22"
+      - "35.191.0.0/16"
+    allowed:
+      - protocol: "tcp"
+        ports: ["80", "443", "8000", "8080"]
+    target_tags:
+      - "textnlp-app"
+      - "textnlp-gpu"
+  
+  # Allow external HTTP/HTTPS
+  allow_external_web:
+    name: "textnlp-allow-external-web"
+    description: "Allow external HTTP/HTTPS traffic"
+    direction: "INGRESS"
+    priority: 1000
+    source_ranges:
+      - "0.0.0.0/0"
+    allowed:
+      - protocol: "tcp"
+        ports: ["80", "443"]
+    target_tags:
+      - "textnlp-lb"
+  
+  # Deny all other ingress
+  deny_all_ingress:
+    name: "textnlp-deny-all-ingress"
+    description: "Deny all other ingress traffic"
+    direction: "INGRESS"
+    priority: 65534
+    source_ranges:
+      - "0.0.0.0/0"
+    denied:
+      - protocol: "all"
+
+# Cloud Router and NAT
+cloud_router:
+  name: "textnlp-router"
+  region: "us-central1"
+  description: "Router for TextNLP platform NAT gateway"
+  
+  bgp:
+    asn: 64512
+    advertise_mode: "DEFAULT"
+
+cloud_nat:
+  name: "textnlp-nat"
+  router: "textnlp-router"
+  region: "us-central1"
+  nat_ip_allocate_option: "AUTO_ONLY"
+  source_subnetwork_ip_ranges_to_nat: "ALL_SUBNETWORKS_ALL_IP_RANGES"
+  
+  log_config:
+    enable: true
+    filter: "ERRORS_ONLY"
+  
+  min_ports_per_vm: 64
+  max_ports_per_vm: 65536
+  enable_endpoint_independent_mapping: true
+
+# Private Service Connect
+private_service_connect:
+  # Cloud SQL
+  cloud_sql:
+    name: "textnlp-cloudsql-psc"
+    network: "textnlp-vpc"
+    purpose: "VPC_PEERING"
+    reserved_peering_ranges:
+      - "textnlp-cloudsql-range"
+    service: "servicenetworking.googleapis.com"
+  
+  # Memorystore (Redis)
+  memorystore:
+    name: "textnlp-memorystore-psc"
+    network: "textnlp-vpc"
+    purpose: "PRIVATE_SERVICE_CONNECT"
+    reserved_peering_ranges:
+      - "textnlp-memorystore-range"
+
+# Reserved IP Ranges for Private Services
+reserved_ip_ranges:
+  cloudsql:
+    name: "textnlp-cloudsql-range"
+    ip_cidr_range: "10.1.240.0/20"  # 4096 IPs
+    network: "textnlp-vpc"
+    purpose: "VPC_PEERING"
+    description: "Reserved range for Cloud SQL"
+  
+  memorystore:
+    name: "textnlp-memorystore-range"
+    ip_cidr_range: "10.1.224.0/20"  # 4096 IPs
+    network: "textnlp-vpc"
+    purpose: "PRIVATE_SERVICE_CONNECT"
+    description: "Reserved range for Memorystore"
+
+# Load Balancing
+load_balancing:
+  # Global HTTP(S) Load Balancer
+  global_lb:
+    name: "textnlp-global-lb"
+    ip_version: "IPV4"
+    load_balancing_scheme: "EXTERNAL"
+    
+    backend_services:
+      api:
+        name: "textnlp-api-backend"
+        protocol: "HTTP"
+        port_name: "http"
+        timeout_sec: 30
+        
+        health_check:
+          name: "textnlp-api-health-check"
+          http_health_check:
+            port: 8000
+            request_path: "/health"
+            check_interval_sec: 10
+            timeout_sec: 5
+            healthy_threshold: 2
+            unhealthy_threshold: 3
+        
+        backend:
+          group: "textnlp-app-ig"
+          balancing_mode: "UTILIZATION"
+          max_utilization: 0.8
+          capacity_scaler: 1.0
+      
+      gpu:
+        name: "textnlp-gpu-backend"
+        protocol: "HTTP"
+        port_name: "gpu-http"
+        timeout_sec: 180  # Longer timeout for GPU inference
+        
+        health_check:
+          name: "textnlp-gpu-health-check"
+          http_health_check:
+            port: 8080
+            request_path: "/health"
+            check_interval_sec: 15
+            timeout_sec: 10
+            healthy_threshold: 2
+            unhealthy_threshold: 2
+    
+    url_map:
+      name: "textnlp-url-map"
+      default_service: "textnlp-api-backend"
+      
+      path_matchers:
+        - name: "gpu-matcher"
+          default_service: "textnlp-gpu-backend"
+          path_rules:
+            - paths: ["/api/v1/generate", "/api/v1/embed"]
+              service: "textnlp-gpu-backend"
+
+# DNS
+dns:
+  managed_zone:
+    name: "textnlp-zone"
+    dns_name: "textnlp.example.com."
+    description: "DNS zone for TextNLP platform"
+    visibility: "public"
+    
+    dnssec_config:
+      state: "on"
+      kind: "managed"
+
+# Security Policies
+security_policies:
+  cloud_armor:
+    name: "textnlp-security-policy"
+    description: "Cloud Armor security policy for TextNLP"
+    
+    rules:
+      # Rate limiting
+      - priority: 1000
+        description: "Rate limit per IP"
+        match:
+          versioned_expr: "SRC_IPS_V1"
+          config:
+            src_ip_ranges: ["*"]
+        action: "rate_based_ban"
+        rate_limit_options:
+          conform_action: "allow"
+          exceed_action: "deny_429"
+          enforce_on_key: "IP"
+          rate_limit_threshold:
+            count: 100
+            interval_sec: 60
+      
+      # Geographic restrictions
+      - priority: 2000
+        description: "Allow specific countries"
+        match:
+          expr:
+            expression: "origin.region_code == 'US' || origin.region_code == 'CA' || origin.region_code == 'GB'"
+        action: "allow"
+      
+      # Block known bad IPs
+      - priority: 3000
+        description: "Block malicious IPs"
+        match:
+          versioned_expr: "SRC_IPS_V1"
+          config:
+            src_ip_ranges: ["192.0.2.0/24"]  # Example range
+        action: "deny_403"
+      
+      # Default allow
+      - priority: 2147483647
+        description: "Default allow"
+        match:
+          versioned_expr: "SRC_IPS_V1"
+          config:
+            src_ip_ranges: ["*"]
+        action: "allow"
+
+# Monitoring and Logging
+monitoring:
+  # Uptime checks
+  uptime_checks:
+    api:
+      display_name: "TextNLP API Uptime"
+      monitored_resource:
+        type: "uptime_url"
+        labels:
+          project_id: "textnlp-prod-001"
+          host: "api.textnlp.example.com"
+      http_check:
+        path: "/health"
+        port: 443
+        use_ssl: true
+        request_method: "GET"
+      timeout: "10s"
+      period: "60s"
+      
+      selected_regions:
+        - "USA"
+        - "EUROPE"
+        - "ASIA_PACIFIC"
+  
+  # Alert policies
+  alert_policies:
+    high_latency:
+      display_name: "High API Latency"
+      conditions:
+        - display_name: "API latency > 2s"
+          condition_threshold:
+            filter: 'resource.type="gce_instance" AND metric.type="compute.googleapis.com/instance/up"'
+            comparison: "COMPARISON_GREATER_THAN"
+            threshold_value: 2000
+            duration: "300s"
+      
+      notification_channels: ["textnlp-alerts"]
+      alert_strategy:
+        auto_close: "1800s"
+
+# Backup and Disaster Recovery
+disaster_recovery:
+  # Multi-region setup
+  secondary_region: "us-east1"
+  
+  # Network replication
+  vpc_peering:
+    enabled: false  # Enable when secondary region is ready
+    peer_network: "textnlp-vpc-dr"
+    peer_project: "textnlp-dr-001"
+  
+  # Backup strategy
+  backup_schedule:
+    network_config: "daily"
+    firewall_rules: "daily"
+    retention_days: 30
+
+# Cost Optimization
+cost_optimization:
+  # Preemptible instances for non-critical workloads
+  preemptible_config:
+    enabled: true
+    workload_types:
+      - "batch-processing"
+      - "development"
+      - "testing"
+  
+  # Committed use discounts
+  committed_use:
+    cpu_commitment: "100 vCPUs"
+    memory_commitment: "400 GB"
+    gpu_commitment: "4 T4 GPUs"
+    term: "1 year"
+  
+  # Resource scheduling
+  resource_scheduling:
+    dev_environment_shutdown: "18:00"
+    dev_environment_startup: "08:00"
+    timezone: "America/Chicago"
+
+# Compliance and Governance
+compliance:
+  # VPC Flow Logs
+  vpc_flow_logs:
+    enabled: true
+    aggregation_interval: "INTERVAL_5_SEC"
+    flow_sampling: 0.5
+    metadata: "INCLUDE_ALL_METADATA"
+    
+    filter_expr: "true"  # Log all traffic
+    
+    destination:
+      type: "cloud_logging"
+      log_name: "vpc_flows"
+  
+  # Audit logging
+  audit_config:
+    log_type: "ADMIN_READ"
+    exempted_members: []
+  
+  # Data residency
+  data_residency:
+    allowed_regions:
+      - "us-central1"
+      - "us-east1"
+    data_sovereignty: true
+  
+  # Encryption
+  encryption:
+    network_encryption: true
+    customer_managed_keys: false  # Use Google-managed keys initially
+
+# Deployment Configuration
+deployment:
+  terraform_backend:
+    bucket: "textnlp-terraform-state-gcp"
+    prefix: "network"
+  
+  deployment_order:
+    1. "VPC Network"
+    2. "Subnets and IP ranges"
+    3. "Cloud Router and NAT"
+    4. "Firewall rules"
+    5. "Private Service Connect"
+    6. "Load balancing"
+    7. "DNS configuration"
+    8. "Security policies"
+    9. "Monitoring setup"
+  
+  validation_tests:
+    - "Subnet connectivity test"
+    - "NAT gateway functionality"
+    - "Firewall rule validation"
+    - "Load balancer health checks"
+    - "DNS resolution test"
+    - "Private service connectivity"
+
+# Environment-specific overrides
+environments:
+  development:
+    vpc_network:
+      name: "textnlp-dev-vpc"
+    
+    subnets:
+      application:
+        ip_cidr_range: "10.2.0.0/24"
+      gpu:
+        ip_cidr_range: "10.2.1.0/24"
+    
+    cost_optimization:
+      preemptible_config:
+        enabled: true
+        workload_types: ["all"]
+  
+  staging:
+    vpc_network:
+      name: "textnlp-staging-vpc"
+    
+    subnets:
+      application:
+        ip_cidr_range: "10.3.0.0/24"
+      gpu:
+        ip_cidr_range: "10.3.1.0/24"

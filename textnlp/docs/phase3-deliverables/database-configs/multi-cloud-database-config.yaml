@@ -1,0 +1,1012 @@
+# Multi-Cloud Database Configuration for TextNLP Platform
+# Phase 3: Core Infrastructure Deployment
+
+apiVersion: v1
+kind: DatabaseConfig
+metadata:
+  name: textnlp-database-config
+  version: "1.0"
+  environment: production
+
+# Database Strategy
+database_strategy:
+  # Primary database selection by platform
+  primary_databases:
+    aws: "aws_rds"
+    gcp: "cloud_sql"
+    azure: "azure_sql"
+    onprem: "postgresql"
+  
+  # Database architecture
+  architecture:
+    type: "microservices"
+    pattern: "database_per_service"
+    
+    # Service-specific databases
+    services:
+      model_registry:
+        engine: "postgresql"
+        purpose: "Model metadata, versions, lineage"
+        schema: "model_registry"
+      
+      inference_logs:
+        engine: "postgresql"
+        purpose: "Request logs, performance metrics"
+        schema: "inference_logs"
+      
+      user_management:
+        engine: "postgresql"
+        purpose: "Users, roles, permissions"
+        schema: "user_management"
+      
+      analytics:
+        engine: "postgresql"
+        purpose: "Usage analytics, reporting"
+        schema: "analytics"
+      
+      configuration:
+        engine: "postgresql"
+        purpose: "Application configuration, feature flags"
+        schema: "configuration"
+  
+  # Data distribution strategy
+  data_distribution:
+    strategy: "regional_replication"
+    consistency_level: "eventual"
+    
+    # Backup and replication
+    replication:
+      enabled: true
+      mode: "asynchronous"
+      regions:
+        primary: "us-east-1"
+        secondary: ["us-west-2", "eu-west-1"]
+    
+    # Sharding strategy for large datasets
+    sharding:
+      enabled: false  # Start without sharding
+      strategy: "range_based"
+      shard_key: "created_date"
+
+# AWS Database Configuration
+aws_databases:
+  # Primary RDS PostgreSQL cluster
+  rds_postgresql:
+    cluster_identifier: "textnlp-postgres-cluster"
+    engine: "aurora-postgresql"
+    engine_version: "15.4"
+    
+    # Cluster configuration
+    cluster_config:
+      # Master instance
+      master_instance:
+        instance_class: "db.r6g.2xlarge"  # 8 vCPU, 64 GiB RAM
+        availability_zone: "us-east-1a"
+        
+        # Storage configuration
+        storage:
+          type: "aurora"
+          encrypted: true
+          kms_key_id: "arn:aws:kms:us-east-1:ACCOUNT:key/DB-ENCRYPTION-KEY"
+          backup_retention_period: 30
+          backup_window: "03:00-04:00"
+          maintenance_window: "sun:04:00-sun:05:00"
+      
+      # Read replicas
+      read_replicas:
+        - instance_identifier: "textnlp-postgres-reader-1"
+          instance_class: "db.r6g.xlarge"  # 4 vCPU, 32 GiB RAM
+          availability_zone: "us-east-1b"
+        
+        - instance_identifier: "textnlp-postgres-reader-2"
+          instance_class: "db.r6g.xlarge"
+          availability_zone: "us-east-1c"
+      
+      # Network configuration
+      network_config:
+        vpc_id: "vpc-textnlp-main"
+        subnet_group: "textnlp-db-subnet-group"
+        security_groups: ["sg-textnlp-database"]
+        publicly_accessible: false
+        port: 5432
+      
+      # Performance configuration
+      performance_config:
+        # Parameter group
+        parameter_group:
+          family: "aurora-postgresql15"
+          parameters:
+            shared_preload_libraries: "pg_stat_statements,pg_hint_plan"
+            max_connections: "1000"
+            shared_buffers: "16GB"
+            effective_cache_size: "48GB"
+            work_mem: "32MB"
+            maintenance_work_mem: "2GB"
+            checkpoint_completion_target: "0.9"
+            wal_buffers: "16MB"
+            default_statistics_target: "100"
+            random_page_cost: "1.1"
+            effective_io_concurrency: "200"
+            
+            # Logging
+            log_statement: "ddl"
+            log_min_duration_statement: "1000"
+            log_checkpoints: "on"
+            log_connections: "on"
+            log_disconnections: "on"
+            log_lock_waits: "on"
+        
+        # Monitoring
+        monitoring:
+          enhanced_monitoring: true
+          monitoring_interval: 60
+          monitoring_role_arn: "arn:aws:iam::ACCOUNT:role/rds-monitoring-role"
+          
+          # Performance Insights
+          performance_insights:
+            enabled: true
+            retention_period: 7
+    
+    # Aurora Serverless v2 for development
+    serverless_config:
+      enabled: false  # Use for dev/test environments
+      min_capacity: 0.5
+      max_capacity: 16
+      auto_pause: true
+      seconds_until_auto_pause: 300
+  
+  # RDS Proxy for connection pooling
+  rds_proxy:
+    proxy_name: "textnlp-postgres-proxy"
+    engine_family: "POSTGRESQL"
+    
+    # Target configuration
+    target_group:
+      db_cluster_identifier: "textnlp-postgres-cluster"
+      connection_pool_config:
+        max_connections_percent: 100
+        max_idle_connections_percent: 50
+        connection_borrow_timeout: 120
+        session_pinning_filters: ["EXCLUDE_VARIABLE_SETS"]
+    
+    # Authentication
+    auth:
+      auth_scheme: "SECRETS"
+      secret_arn: "arn:aws:secretsmanager:us-east-1:ACCOUNT:secret:textnlp-db-credentials"
+      iam_auth: "REQUIRED"
+    
+    # Network configuration
+    vpc_subnet_ids:
+      - "subnet-private-1a"
+      - "subnet-private-1b"
+      - "subnet-private-1c"
+    security_group_ids:
+      - "sg-textnlp-database-proxy"
+    
+    # Monitoring
+    cloudwatch_logs_exports:
+      - "postgresql"
+
+# GCP Database Configuration
+gcp_databases:
+  # Cloud SQL PostgreSQL
+  cloud_sql_postgresql:
+    instance_id: "textnlp-postgres-main"
+    database_version: "POSTGRES_15"
+    region: "us-central1"
+    
+    # Instance configuration
+    instance_config:
+      tier: "db-custom-8-32768"  # 8 vCPU, 32 GB RAM
+      
+      # Disk configuration
+      disk_config:
+        size_gb: 1000
+        type: "PD_SSD"
+        auto_resize: true
+        auto_resize_limit: 5000
+      
+      # Availability configuration
+      availability_type: "REGIONAL"  # High availability
+      
+      # Backup configuration
+      backup_config:
+        enabled: true
+        start_time: "03:00"
+        location: "us-central1"
+        point_in_time_recovery_enabled: true
+        transaction_log_retention_days: 7
+        backup_retention_settings:
+          retained_backups: 30
+          retention_unit: "COUNT"
+      
+      # Network configuration
+      network_config:
+        authorized_networks: []  # Private IP only
+        private_network: "projects/textnlp-prod-001/global/networks/textnlp-vpc"
+        allocated_ip_range: "google-managed-services-textnlp-vpc"
+      
+      # Database flags
+      database_flags:
+        - name: "max_connections"
+          value: "1000"
+        - name: "shared_buffers"
+          value: "8192MB"
+        - name: "effective_cache_size"
+          value: "24576MB"
+        - name: "work_mem"
+          value: "32MB"
+        - name: "maintenance_work_mem"
+          value: "2048MB"
+        - name: "checkpoint_completion_target"
+          value: "0.9"
+        - name: "wal_buffers"
+          value: "16MB"
+        - name: "default_statistics_target"
+          value: "100"
+        - name: "random_page_cost"
+          value: "1.1"
+        - name: "effective_io_concurrency"
+          value: "200"
+        - name: "log_min_duration_statement"
+          value: "1000"
+        - name: "log_checkpoints"
+          value: "on"
+        - name: "log_connections"
+          value: "on"
+        - name: "log_disconnections"
+          value: "on"
+        - name: "shared_preload_libraries"
+          value: "pg_stat_statements"
+      
+      # Maintenance window
+      maintenance_window:
+        day: 7  # Sunday
+        hour: 4
+        update_track: "stable"
+    
+    # Read replicas
+    read_replicas:
+      - replica_name: "textnlp-postgres-replica-1"
+        tier: "db-custom-4-16384"  # 4 vCPU, 16 GB RAM
+        region: "us-central1"
+        disk_size_gb: 500
+        
+      - replica_name: "textnlp-postgres-replica-2"
+        tier: "db-custom-4-16384"
+        region: "us-east1"  # Cross-region replica
+        disk_size_gb: 500
+    
+    # Connection pooling with PgBouncer
+    connection_pooling:
+      enabled: true
+      pooler_config:
+        pool_mode: "TRANSACTION"
+        default_pool_size: 25
+        min_pool_size: 10
+        max_pool_size: 50
+        max_client_conn: 1000
+        server_reset_query: "DISCARD ALL"
+
+# Azure Database Configuration
+azure_databases:
+  # Azure Database for PostgreSQL Flexible Server
+  postgresql_flexible:
+    server_name: "textnlp-postgres-main"
+    resource_group: "textnlp-prod-rg"
+    location: "eastus"
+    
+    # Server configuration
+    server_config:
+      version: "15"
+      sku_name: "Standard_D8s_v3"  # 8 vCPU, 32 GB RAM
+      
+      # Storage configuration
+      storage:
+        size_gb: 1024
+        tier: "P30"  # Premium SSD
+        auto_grow: "Enabled"
+        
+        # Backup configuration
+        backup:
+          backup_retention_days: 30
+          geo_redundant_backup: "Enabled"
+          earliest_restore_date: "auto"
+      
+      # High availability
+      high_availability:
+        mode: "ZoneRedundant"
+        standby_availability_zone: "2"
+      
+      # Network configuration
+      network:
+        public_network_access: "Disabled"
+        
+        # Private endpoint
+        private_dns_zone_id: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg/providers/Microsoft.Network/privateDnsZones/privatelink.postgres.database.azure.com"
+        
+        # Virtual network rule
+        virtual_network_rule:
+          virtual_network_resource_id: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg/providers/Microsoft.Network/virtualNetworks/textnlp-vnet"
+          subnet_name: "database-subnet"
+      
+      # Server parameters
+      server_parameters:
+        - name: "max_connections"
+          value: "1000"
+        - name: "shared_buffers"
+          value: "2097152"  # 8GB in 8KB pages
+        - name: "effective_cache_size"
+          value: "6291456"  # 24GB in 8KB pages
+        - name: "work_mem"
+          value: "32768"    # 32MB in KB
+        - name: "maintenance_work_mem"
+          value: "2097152"  # 2GB in KB
+        - name: "checkpoint_completion_target"
+          value: "0.9"
+        - name: "wal_buffers"
+          value: "2048"     # 16MB in 8KB pages
+        - name: "default_statistics_target"
+          value: "100"
+        - name: "random_page_cost"
+          value: "1.1"
+        - name: "effective_io_concurrency"
+          value: "200"
+        - name: "log_min_duration_statement"
+          value: "1000"
+        - name: "log_checkpoints"
+          value: "on"
+        - name: "log_connections"
+          value: "on"
+        - name: "log_disconnections"
+          value: "on"
+        - name: "shared_preload_libraries"
+          value: "pg_stat_statements"
+      
+      # Maintenance window
+      maintenance_window:
+        day_of_week: 0  # Sunday
+        start_hour: 4
+        start_minute: 0
+    
+    # Read replicas
+    read_replicas:
+      - replica_name: "textnlp-postgres-replica-1"
+        location: "eastus"
+        sku_name: "Standard_D4s_v3"  # 4 vCPU, 16 GB RAM
+        
+      - replica_name: "textnlp-postgres-replica-2"
+        location: "westus2"  # Cross-region replica
+        sku_name: "Standard_D4s_v3"
+    
+    # Azure Database for PostgreSQL - Connection pooling
+    connection_pooling:
+      enabled: true
+      
+      # PgBouncer configuration
+      pgbouncer_config:
+        pool_mode: "transaction"
+        default_pool_size: 25
+        min_pool_size: 10
+        max_pool_size: 50
+        max_client_conn: 1000
+        
+        # Pool configuration per database
+        databases:
+          model_registry:
+            pool_size: 20
+          inference_logs:
+            pool_size: 30
+          user_management:
+            pool_size: 10
+          analytics:
+            pool_size: 15
+          configuration:
+            pool_size: 5
+
+# On-Premises Database Configuration
+onprem_databases:
+  # PostgreSQL cluster with Patroni
+  postgresql_ha:
+    cluster_name: "textnlp-postgres-ha"
+    
+    # Cluster configuration
+    cluster_config:
+      # Master node
+      master:
+        hostname: "postgres-master-01"
+        ip: "10.100.1.71"
+        port: 5432
+        
+        # Hardware specs
+        hardware:
+          cpu_cores: 16
+          memory_gb: 64
+          storage_gb: 2000
+          storage_type: "NVMe SSD"
+        
+        # PostgreSQL configuration
+        postgresql_config:
+          version: "15.4"
+          data_directory: "/var/lib/postgresql/15/main"
+          config_file: "/etc/postgresql/15/main/postgresql.conf"
+          hba_file: "/etc/postgresql/15/main/pg_hba.conf"
+          
+          # Performance settings
+          settings:
+            max_connections: 1000
+            shared_buffers: "16GB"
+            effective_cache_size: "48GB"
+            work_mem: "32MB"
+            maintenance_work_mem: "2GB"
+            checkpoint_completion_target: 0.9
+            wal_buffers: "16MB"
+            default_statistics_target: 100
+            random_page_cost: 1.1
+            effective_io_concurrency: 200
+            
+            # WAL configuration
+            wal_level: "replica"
+            max_wal_senders: 10
+            max_replication_slots: 10
+            hot_standby: "on"
+            hot_standby_feedback: "on"
+            
+            # Logging
+            log_destination: "csvlog"
+            logging_collector: "on"
+            log_directory: "/var/log/postgresql"
+            log_filename: "postgresql-%Y-%m-%d_%H%M%S.log"
+            log_min_duration_statement: 1000
+            log_checkpoints: "on"
+            log_connections: "on"
+            log_disconnections: "on"
+            log_lock_waits: "on"
+            log_statement: "ddl"
+            
+            # Vacuum settings
+            autovacuum: "on"
+            autovacuum_max_workers: 6
+            autovacuum_vacuum_scale_factor: 0.1
+            autovacuum_analyze_scale_factor: 0.05
+      
+      # Standby nodes
+      standbys:
+        - hostname: "postgres-standby-01"
+          ip: "10.100.1.72"
+          port: 5432
+          sync_mode: "async"
+          
+        - hostname: "postgres-standby-02"
+          ip: "10.100.1.73"
+          port: 5432
+          sync_mode: "async"
+      
+      # Patroni configuration
+      patroni_config:
+        scope: "textnlp-postgres"
+        namespace: "/textnlp/"
+        name: "postgres-master-01"
+        
+        # REST API
+        restapi:
+          listen: "0.0.0.0:8008"
+          connect_address: "10.100.1.71:8008"
+        
+        # Bootstrap configuration
+        bootstrap:
+          dcs:
+            ttl: 30
+            loop_wait: 10
+            retry_timeout: 30
+            maximum_lag_on_failover: 1048576
+            master_start_timeout: 300
+            synchronous_mode: false
+            
+            postgresql:
+              use_pg_rewind: true
+              use_slots: true
+              parameters:
+                wal_level: replica
+                hot_standby: "on"
+                max_connections: 1000
+                max_worker_processes: 16
+                wal_keep_segments: 32
+                max_wal_senders: 10
+                max_replication_slots: 10
+                checkpoint_completion_target: 0.9
+                
+        # Watchdog
+        watchdog:
+          mode: required
+          device: /dev/watchdog
+          safety_margin: 5
+    
+    # Load balancer configuration (HAProxy)
+    load_balancer:
+      enabled: true
+      
+      # HAProxy configuration
+      haproxy_config:
+        frontend:
+          name: "postgres_frontend"
+          bind: "10.100.1.70:5432"
+          default_backend: "postgres_backend"
+          
+        backend:
+          name: "postgres_backend"
+          balance: "leastconn"
+          
+          # Health check
+          option: "pgsql-check user postgres"
+          
+          # Servers
+          servers:
+            - name: "postgres-master"
+              address: "10.100.1.71:5432"
+              check: "check port 5432"
+              weight: 100
+            - name: "postgres-standby-01"
+              address: "10.100.1.72:5432"
+              check: "check port 5432 backup"
+              weight: 90
+            - name: "postgres-standby-02"
+              address: "10.100.1.73:5432"
+              check: "check port 5432 backup"
+              weight: 90
+  
+  # Connection pooling with PgBouncer
+  connection_pooling:
+    enabled: true
+    
+    # PgBouncer cluster configuration
+    pgbouncer_cluster:
+      nodes:
+        - hostname: "pgbouncer-01"
+          ip: "10.100.1.74"
+          port: 6432
+        - hostname: "pgbouncer-02"
+          ip: "10.100.1.75"
+          port: 6432
+      
+      # PgBouncer configuration
+      config:
+        # Database connections
+        databases:
+          model_registry: "host=10.100.1.70 port=5432 dbname=model_registry"
+          inference_logs: "host=10.100.1.70 port=5432 dbname=inference_logs"
+          user_management: "host=10.100.1.70 port=5432 dbname=user_management"
+          analytics: "host=10.100.1.70 port=5432 dbname=analytics"
+          configuration: "host=10.100.1.70 port=5432 dbname=configuration"
+        
+        # Pool settings
+        pool_mode: "transaction"
+        max_client_conn: 1000
+        default_pool_size: 25
+        min_pool_size: 10
+        reserve_pool_size: 5
+        reserve_pool_timeout: 5
+        max_db_connections: 100
+        max_user_connections: 100
+        
+        # Connection settings
+        server_reset_query: "DISCARD ALL"
+        server_check_query: "select 1"
+        server_check_delay: 30
+        server_connect_timeout: 15
+        server_login_retry: 15
+        client_login_timeout: 60
+        autodb_idle_timeout: 3600
+        
+        # Log settings
+        log_connections: 1
+        log_disconnections: 1
+        log_pooler_errors: 1
+
+# Database Schema Design
+database_schemas:
+  # Model Registry Schema
+  model_registry:
+    tables:
+      - name: "models"
+        columns:
+          - {name: "id", type: "UUID", constraints: "PRIMARY KEY DEFAULT gen_random_uuid()"}
+          - {name: "name", type: "VARCHAR(255)", constraints: "NOT NULL UNIQUE"}
+          - {name: "version", type: "VARCHAR(50)", constraints: "NOT NULL"}
+          - {name: "description", type: "TEXT"}
+          - {name: "model_type", type: "VARCHAR(100)", constraints: "NOT NULL"}
+          - {name: "framework", type: "VARCHAR(50)", constraints: "NOT NULL"}
+          - {name: "file_path", type: "TEXT", constraints: "NOT NULL"}
+          - {name: "file_size_bytes", type: "BIGINT"}
+          - {name: "checksum", type: "VARCHAR(64)"}
+          - {name: "parameters", type: "JSONB"}
+          - {name: "metrics", type: "JSONB"}
+          - {name: "tags", type: "JSONB"}
+          - {name: "created_at", type: "TIMESTAMP WITH TIME ZONE", constraints: "DEFAULT CURRENT_TIMESTAMP"}
+          - {name: "updated_at", type: "TIMESTAMP WITH TIME ZONE", constraints: "DEFAULT CURRENT_TIMESTAMP"}
+          - {name: "created_by", type: "UUID", constraints: "NOT NULL"}
+        indexes:
+          - {name: "idx_models_name_version", columns: ["name", "version"], unique: true}
+          - {name: "idx_models_type", columns: ["model_type"]}
+          - {name: "idx_models_framework", columns: ["framework"]}
+          - {name: "idx_models_created_at", columns: ["created_at"]}
+          - {name: "idx_models_tags", columns: ["tags"], type: "GIN"}
+      
+      - name: "model_versions"
+        columns:
+          - {name: "id", type: "UUID", constraints: "PRIMARY KEY DEFAULT gen_random_uuid()"}
+          - {name: "model_id", type: "UUID", constraints: "NOT NULL REFERENCES models(id) ON DELETE CASCADE"}
+          - {name: "version", type: "VARCHAR(50)", constraints: "NOT NULL"}
+          - {name: "parent_version_id", type: "UUID", constraints: "REFERENCES model_versions(id)"}
+          - {name: "status", type: "VARCHAR(20)", constraints: "NOT NULL DEFAULT 'draft'"}
+          - {name: "changelog", type: "TEXT"}
+          - {name: "artifacts", type: "JSONB"}
+          - {name: "created_at", type: "TIMESTAMP WITH TIME ZONE", constraints: "DEFAULT CURRENT_TIMESTAMP"}
+          - {name: "created_by", type: "UUID", constraints: "NOT NULL"}
+        indexes:
+          - {name: "idx_model_versions_model_id", columns: ["model_id"]}
+          - {name: "idx_model_versions_version", columns: ["version"]}
+          - {name: "idx_model_versions_status", columns: ["status"]}
+      
+      - name: "model_deployments"
+        columns:
+          - {name: "id", type: "UUID", constraints: "PRIMARY KEY DEFAULT gen_random_uuid()"}
+          - {name: "model_id", type: "UUID", constraints: "NOT NULL REFERENCES models(id)"}
+          - {name: "version_id", type: "UUID", constraints: "NOT NULL REFERENCES model_versions(id)"}
+          - {name: "environment", type: "VARCHAR(50)", constraints: "NOT NULL"}
+          - {name: "endpoint_url", type: "TEXT"}
+          - {name: "status", type: "VARCHAR(20)", constraints: "NOT NULL"}
+          - {name: "configuration", type: "JSONB"}
+          - {name: "deployed_at", type: "TIMESTAMP WITH TIME ZONE", constraints: "DEFAULT CURRENT_TIMESTAMP"}
+          - {name: "deployed_by", type: "UUID", constraints: "NOT NULL"}
+        indexes:
+          - {name: "idx_deployments_model_env", columns: ["model_id", "environment"]}
+          - {name: "idx_deployments_status", columns: ["status"]}
+
+  # Inference Logs Schema
+  inference_logs:
+    tables:
+      - name: "inference_requests"
+        columns:
+          - {name: "id", type: "UUID", constraints: "PRIMARY KEY DEFAULT gen_random_uuid()"}
+          - {name: "request_id", type: "VARCHAR(255)", constraints: "NOT NULL UNIQUE"}
+          - {name: "model_id", type: "UUID", constraints: "NOT NULL"}
+          - {name: "user_id", type: "UUID"}
+          - {name: "input_text", type: "TEXT"}
+          - {name: "output_text", type: "TEXT"}
+          - {name: "input_tokens", type: "INTEGER"}
+          - {name: "output_tokens", type: "INTEGER"}
+          - {name: "latency_ms", type: "INTEGER"}
+          - {name: "status", type: "VARCHAR(20)", constraints: "NOT NULL"}
+          - {name: "error_message", type: "TEXT"}
+          - {name: "parameters", type: "JSONB"}
+          - {name: "metadata", type: "JSONB"}
+          - {name: "created_at", type: "TIMESTAMP WITH TIME ZONE", constraints: "DEFAULT CURRENT_TIMESTAMP"}
+        indexes:
+          - {name: "idx_inference_model_id", columns: ["model_id"]}
+          - {name: "idx_inference_user_id", columns: ["user_id"]}
+          - {name: "idx_inference_status", columns: ["status"]}
+          - {name: "idx_inference_created_at", columns: ["created_at"]}
+          - {name: "idx_inference_latency", columns: ["latency_ms"]}
+        partitioning:
+          strategy: "range"
+          column: "created_at"
+          interval: "1 month"
+
+  # User Management Schema
+  user_management:
+    tables:
+      - name: "users"
+        columns:
+          - {name: "id", type: "UUID", constraints: "PRIMARY KEY DEFAULT gen_random_uuid()"}
+          - {name: "username", type: "VARCHAR(255)", constraints: "NOT NULL UNIQUE"}
+          - {name: "email", type: "VARCHAR(255)", constraints: "NOT NULL UNIQUE"}
+          - {name: "full_name", type: "VARCHAR(255)"}
+          - {name: "password_hash", type: "VARCHAR(255)", constraints: "NOT NULL"}
+          - {name: "is_active", type: "BOOLEAN", constraints: "DEFAULT true"}
+          - {name: "is_verified", type: "BOOLEAN", constraints: "DEFAULT false"}
+          - {name: "last_login", type: "TIMESTAMP WITH TIME ZONE"}
+          - {name: "created_at", type: "TIMESTAMP WITH TIME ZONE", constraints: "DEFAULT CURRENT_TIMESTAMP"}
+          - {name: "updated_at", type: "TIMESTAMP WITH TIME ZONE", constraints: "DEFAULT CURRENT_TIMESTAMP"}
+        indexes:
+          - {name: "idx_users_email", columns: ["email"], unique: true}
+          - {name: "idx_users_username", columns: ["username"], unique: true}
+          - {name: "idx_users_active", columns: ["is_active"]}
+      
+      - name: "roles"
+        columns:
+          - {name: "id", type: "UUID", constraints: "PRIMARY KEY DEFAULT gen_random_uuid()"}
+          - {name: "name", type: "VARCHAR(100)", constraints: "NOT NULL UNIQUE"}
+          - {name: "description", type: "TEXT"}
+          - {name: "permissions", type: "JSONB"}
+          - {name: "created_at", type: "TIMESTAMP WITH TIME ZONE", constraints: "DEFAULT CURRENT_TIMESTAMP"}
+      
+      - name: "user_roles"
+        columns:
+          - {name: "user_id", type: "UUID", constraints: "NOT NULL REFERENCES users(id) ON DELETE CASCADE"}
+          - {name: "role_id", type: "UUID", constraints: "NOT NULL REFERENCES roles(id) ON DELETE CASCADE"}
+          - {name: "assigned_at", type: "TIMESTAMP WITH TIME ZONE", constraints: "DEFAULT CURRENT_TIMESTAMP"}
+          - {name: "assigned_by", type: "UUID", constraints: "NOT NULL REFERENCES users(id)"}
+        constraints:
+          - "PRIMARY KEY (user_id, role_id)"
+
+# Database Migration Strategy
+migration_strategy:
+  # Migration framework
+  framework: "alembic"  # Python SQLAlchemy migrations
+  
+  # Migration environments
+  environments:
+    development:
+      auto_migrate: true
+      backup_before_migration: false
+    
+    staging:
+      auto_migrate: false
+      backup_before_migration: true
+      approval_required: true
+    
+    production:
+      auto_migrate: false
+      backup_before_migration: true
+      approval_required: true
+      rollback_plan_required: true
+  
+  # Migration procedures
+  procedures:
+    pre_migration:
+      - "backup_database"
+      - "validate_schema"
+      - "check_dependencies"
+    
+    migration:
+      - "apply_schema_changes"
+      - "migrate_data"
+      - "update_indexes"
+    
+    post_migration:
+      - "validate_data_integrity"
+      - "update_statistics"
+      - "monitor_performance"
+  
+  # Rollback strategy
+  rollback_strategy:
+    automatic_rollback_triggers:
+      - "migration_timeout"
+      - "data_integrity_failure"
+      - "performance_degradation"
+    
+    rollback_procedures:
+      - "stop_application_traffic"
+      - "restore_from_backup"
+      - "validate_rollback"
+      - "resume_application_traffic"
+
+# Performance Optimization
+performance_optimization:
+  # Indexing strategy
+  indexing:
+    # Automated index recommendations
+    auto_indexing:
+      enabled: true
+      analysis_period: "7d"
+      min_query_frequency: 100
+      min_performance_impact: "10%"
+    
+    # Index maintenance
+    maintenance:
+      reindex_schedule: "weekly"
+      analyze_schedule: "daily"
+      vacuum_schedule: "nightly"
+  
+  # Query optimization
+  query_optimization:
+    # Query plan caching
+    plan_caching:
+      enabled: true
+      cache_size: "1GB"
+      cache_ttl: "1h"
+    
+    # Slow query analysis
+    slow_query_analysis:
+      enabled: true
+      threshold_ms: 1000
+      log_explain_plans: true
+      auto_optimization: false
+  
+  # Connection optimization
+  connection_optimization:
+    # Connection pooling
+    pooling:
+      enabled: true
+      pool_size: 50
+      max_overflow: 100
+      pool_timeout: 30
+      pool_recycle: 3600
+    
+    # Connection multiplexing
+    multiplexing:
+      enabled: true
+      max_connections_per_pool: 25
+
+# Monitoring and Alerting
+monitoring:
+  # Database metrics
+  metrics:
+    # Performance metrics
+    performance:
+      - "query_duration"
+      - "transactions_per_second"
+      - "connections_active"
+      - "connections_idle"
+      - "cache_hit_ratio"
+      - "index_usage"
+      - "table_size"
+      - "index_size"
+    
+    # System metrics
+    system:
+      - "cpu_utilization"
+      - "memory_utilization"
+      - "disk_utilization"
+      - "disk_iops"
+      - "network_throughput"
+  
+  # Alerting rules
+  alerts:
+    - name: "high_cpu_utilization"
+      condition: "cpu_utilization > 80"
+      duration: "5m"
+      severity: "warning"
+    
+    - name: "high_connection_count"
+      condition: "connections_active > 800"
+      duration: "2m"
+      severity: "critical"
+    
+    - name: "slow_query_detected"
+      condition: "query_duration > 5000"
+      duration: "1m"
+      severity: "warning"
+    
+    - name: "low_cache_hit_ratio"
+      condition: "cache_hit_ratio < 90"
+      duration: "10m"
+      severity: "warning"
+  
+  # Monitoring tools
+  tools:
+    prometheus:
+      enabled: true
+      exporters:
+        - "postgres_exporter"
+        - "pgbouncer_exporter"
+    
+    grafana:
+      enabled: true
+      dashboards:
+        - "postgresql_overview"
+        - "query_performance"
+        - "connection_pooling"
+
+# Security Configuration
+security:
+  # Authentication
+  authentication:
+    methods:
+      - "md5"      # For legacy compatibility
+      - "scram-sha-256"  # Preferred method
+    
+    # Password policy
+    password_policy:
+      min_length: 12
+      require_uppercase: true
+      require_lowercase: true
+      require_numbers: true
+      require_special_chars: true
+      password_history: 5
+      max_age_days: 90
+  
+  # Authorization
+  authorization:
+    # Role-based access control
+    rbac:
+      enabled: true
+      roles:
+        - name: "db_admin"
+          permissions: ["ALL"]
+        - name: "app_read_write"
+          permissions: ["SELECT", "INSERT", "UPDATE", "DELETE"]
+        - name: "app_read_only"
+          permissions: ["SELECT"]
+        - name: "backup_user"
+          permissions: ["SELECT", "REPLICATION"]
+  
+  # Encryption
+  encryption:
+    # Encryption at rest
+    at_rest:
+      enabled: true
+      algorithm: "AES-256"
+      key_management: "cloud_kms"
+    
+    # Encryption in transit
+    in_transit:
+      enabled: true
+      tls_version: "1.3"
+      certificate_authority: "lets_encrypt"
+  
+  # Audit logging
+  audit_logging:
+    enabled: true
+    log_events:
+      - "connection"
+      - "disconnection"
+      - "ddl_statements"
+      - "privilege_changes"
+      - "authentication_failures"
+    
+    log_rotation:
+      enabled: true
+      max_size: "100MB"
+      max_files: 30
+      compression: true
+
+# Backup and Recovery
+backup_recovery:
+  # Backup strategy
+  backup_strategy:
+    # Full backups
+    full_backup:
+      frequency: "daily"
+      time: "02:00"
+      retention_days: 30
+      compression: true
+      encryption: true
+    
+    # Incremental backups
+    incremental_backup:
+      frequency: "hourly"
+      retention_hours: 168  # 7 days
+      compression: true
+    
+    # Point-in-time recovery
+    point_in_time_recovery:
+      enabled: true
+      wal_retention_hours: 168  # 7 days
+      archive_timeout: "5min"
+  
+  # Cross-platform backup
+  cross_platform_backup:
+    enabled: true
+    
+    # Backup destinations
+    destinations:
+      - platform: "aws_s3"
+        bucket: "textnlp-db-backups"
+        encryption: "SSE-KMS"
+      
+      - platform: "gcp_storage"
+        bucket: "textnlp-db-backups-gcp"
+        encryption: "CMEK"
+      
+      - platform: "azure_blob"
+        container: "textnlp-db-backups"
+        encryption: "customer_managed"
+  
+  # Recovery procedures
+  recovery_procedures:
+    # Automated recovery
+    automated_recovery:
+      enabled: true
+      triggers:
+        - "database_unavailable"
+        - "corruption_detected"
+        - "replication_lag_exceeded"
+    
+    # Manual recovery
+    manual_recovery:
+      runbooks:
+        - "docs/runbooks/database-restore.md"
+        - "docs/runbooks/point-in-time-recovery.md"
+        - "docs/runbooks/cross-platform-failover.md"

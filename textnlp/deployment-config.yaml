@@ -1,0 +1,412 @@
+apiVersion: inferloop.io/v1
+kind: ServiceDeployment
+metadata:
+  name: textnlp
+  namespace: inferloop
+  labels:
+    app: textnlp
+    version: v1.0.0
+    component: nlp-generation
+spec:
+  service:
+    type: api
+    description: "AI-powered synthetic text and NLP data generation service"
+    image: inferloop/textnlp:latest
+    port: 8000
+    protocol: HTTP
+    
+  deployment:
+    replicas:
+      min: 2
+      max: 50
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 25%
+        maxUnavailable: 0
+    podManagementPolicy: Parallel
+    
+  tiers:
+    starter:
+      resources:
+        requests:
+          cpu: "1"
+          memory: "2Gi"
+        limits:
+          cpu: "2"
+          memory: "4Gi"
+      features:
+        models: ["gpt2", "gpt2-medium"]
+        max_tokens: 1024
+        token_quota: 500000/hour
+        concurrent_requests: 2
+        streaming: false
+        websocket: false
+        templates: false
+        
+    professional:
+      resources:
+        requests:
+          cpu: "2"
+          memory: "4Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+      features:
+        models: ["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
+        max_tokens: 2048
+        token_quota: 5000000/hour
+        concurrent_requests: 10
+        streaming: true
+        websocket: true
+        templates: true
+        langchain: true
+        
+    business:
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
+      features:
+        models: ["gpt2-*", "gpt-j-6b", "llama-7b"]
+        max_tokens: 4096
+        token_quota: 25000000/hour
+        concurrent_requests: 50
+        streaming: true
+        websocket: true
+        templates: true
+        langchain: true
+        batch_processing: true
+        gpu_acceleration: true
+        
+    enterprise:
+      resources:
+        requests:
+          cpu: "8"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "16"
+          memory: "32Gi"
+          nvidia.com/gpu: "2"
+      features:
+        models: ["all"]
+        max_tokens: 100000
+        token_quota: unlimited
+        concurrent_requests: unlimited
+        streaming: true
+        websocket: true
+        templates: true
+        langchain: true
+        batch_processing: true
+        gpu_acceleration: true
+        commercial_models: true
+        fine_tuning: true
+        custom_models: true
+        
+  models:
+    configuration:
+      - name: gpt2
+        size: 124M
+        memory_required: 1Gi
+        gpu_required: false
+        
+      - name: gpt2-medium
+        size: 355M
+        memory_required: 2Gi
+        gpu_required: false
+        
+      - name: gpt2-large
+        size: 774M
+        memory_required: 3Gi
+        gpu_required: false
+        
+      - name: gpt2-xl
+        size: 1.5B
+        memory_required: 6Gi
+        gpu_required: false
+        
+      - name: gpt-j-6b
+        size: 6B
+        memory_required: 24Gi
+        gpu_required: true
+        
+      - name: llama-7b
+        size: 7B
+        memory_required: 28Gi
+        gpu_required: true
+        
+  integrations:
+    database:
+      type: postgres
+      schema: textnlp
+      pool:
+        min: 5
+        max: 30
+        timeout: 30
+      migrations:
+        enabled: true
+        path: /migrations
+        
+    cache:
+      type: redis
+      namespace: "textnlp"
+      ttl:
+        default: 1800          # 30 minutes
+        model_outputs: 900     # 15 minutes  
+        templates: 86400       # 24 hours
+        api_responses: 300     # 5 minutes
+      features:
+        result_caching: true
+        model_caching: true
+        
+    storage:
+      type: unified
+      buckets:
+        - name: prompts
+          retention: 30d
+          versioning: true
+        - name: generations
+          retention: 7d
+          lifecycle:
+            archive_after: 3d
+        - name: templates
+          retention: -1
+          versioning: true
+        - name: models
+          retention: -1
+          replication: true
+        - name: fine-tuned
+          retention: -1
+          encryption: true
+          
+    messaging:
+      type: unified
+      queues:
+        - name: text-generation
+          type: standard
+          max_size: 10000
+          dlq: true
+        - name: text-streaming
+          type: fifo
+          max_size: 5000
+        - name: fine-tuning
+          type: priority
+          max_size: 1000
+          
+  api:
+    base_path: /api/textnlp
+    version: v1
+    endpoints:
+      - path: /generate
+        method: POST
+        timeout: 300s
+        streaming: true
+        billing:
+          metric: tokens_generated
+          rate: per_1k_tokens
+          
+      - path: /chat
+        method: POST
+        timeout: 600s
+        streaming: true
+        tier_required: professional
+        billing:
+          metric: tokens_generated
+          rate: per_1k_tokens
+          
+      - path: /validate
+        method: POST
+        timeout: 60s
+        billing:
+          metric: validations_performed
+          rate: per_validation
+          
+      - path: /models
+        method: GET
+        cache: 3600s
+        public: true
+        rate_limit: 100/hour
+        
+      - path: /templates
+        method: GET
+        tier_required: professional
+        cache: 3600s
+        
+      - path: /templates/{id}
+        method: GET
+        tier_required: professional
+        
+      - path: /fine-tune
+        method: POST
+        tier_required: enterprise
+        async: true
+        timeout: 86400s
+        
+    websocket:
+      enabled: true
+      path: /ws/stream
+      tier_required: professional
+      max_connections: 1000
+      ping_interval: 30s
+      
+  monitoring:
+    metrics:
+      enabled: true
+      port: 9090
+      path: /metrics
+      scrape_interval: 15s
+      custom:
+        - name: textnlp_tokens_generated_total
+          type: counter
+          labels: ["model", "tier", "user_id"]
+          description: "Total tokens generated"
+          
+        - name: textnlp_generation_duration_seconds
+          type: histogram
+          labels: ["model", "tier", "prompt_length"]
+          buckets: [0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0]
+          description: "Text generation duration"
+          
+        - name: textnlp_active_streams
+          type: gauge
+          labels: ["model"]
+          description: "Active streaming connections"
+          
+        - name: textnlp_model_load_duration_seconds
+          type: histogram
+          labels: ["model"]
+          description: "Model loading time"
+          
+        - name: textnlp_validation_scores
+          type: histogram
+          labels: ["metric_type", "model"]
+          buckets: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+          description: "Validation score distribution"
+          
+    logging:
+      level: INFO
+      format: json
+      outputs:
+        - stdout
+        - unified-logging
+      sensitive_masking:
+        enabled: true
+        patterns:
+          - api_key
+          - password
+          - token
+          
+    tracing:
+      enabled: true
+      sample_rate: 0.1
+      exporter: unified-tracing
+      propagation: w3c
+      
+    alerts:
+      - name: HighTokenLatency
+        condition: "histogram_quantile(0.95, textnlp_generation_duration_seconds) / avg(prompt_length) > 0.1"
+        severity: warning
+        description: "Token generation latency exceeds 100ms per token"
+        
+      - name: ModelLoadFailure
+        condition: "increase(textnlp_model_load_failures_total[5m]) > 0"
+        severity: critical
+        action: page
+        
+      - name: HighGPUUsage
+        condition: "avg(gpu_usage_percent{service='textnlp'}) > 90"
+        severity: warning
+        for: 5m
+        
+      - name: LowCacheHitRate
+        condition: "rate(cache_hits_total) / rate(cache_requests_total) < 0.5"
+        severity: info
+        for: 10m
+        
+  volumes:
+    - name: model-cache
+      mount_path: /models
+      size: 50Gi
+      storage_class: fast-ssd
+      access_mode: ReadWriteMany
+      
+    - name: temp-storage
+      mount_path: /tmp/generations
+      size: 10Gi
+      storage_class: standard
+      access_mode: ReadWriteOnce
+      
+  security:
+    authentication:
+      type: unified-auth
+      required: true
+      methods:
+        - jwt
+        - api_key
+        
+    authorization:
+      model: RBAC
+      permissions:
+        - textnlp:read
+        - textnlp:generate
+        - textnlp:validate
+        - textnlp:templates:read
+        - textnlp:templates:write
+        - textnlp:fine-tune
+        - textnlp:models:manage
+        - textnlp:admin
+        
+    encryption:
+      at_rest: true
+      in_transit: true
+      key_rotation: 90d
+      
+    network_policies:
+      ingress:
+        - from: api-gateway
+          ports: [8000]
+        - from: prometheus
+          ports: [9090]
+      egress:
+        - to: database
+          ports: [5432]
+        - to: redis
+          ports: [6379]
+        - to: storage
+          ports: [443]
+          
+  healthchecks:
+    liveness:
+      path: /health
+      interval: 30s
+      timeout: 10s
+      failures: 3
+      success: 1
+      
+    readiness:
+      path: /ready
+      interval: 10s
+      timeout: 5s
+      failures: 2
+      success: 1
+      initial_delay: 20s
+      
+    startup:
+      path: /startup
+      interval: 10s
+      timeout: 30s
+      failures: 30
+      period: 300s
+      
+  lifecycle:
+    preStop:
+      exec:
+        command: ["/bin/sh", "-c", "sleep 15"]
+    postStart:
+      exec:
+        command: ["/bin/sh", "-c", "/app/scripts/warm-models.sh"]

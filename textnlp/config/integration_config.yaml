@@ -1,0 +1,280 @@
+# Integration Configuration for TextNLP
+# Service integration and orchestration settings
+
+# Service Configuration
+services:
+  # Core TextNLP service
+  textnlp:
+    host: "localhost"
+    port: 8000
+    workers: 4
+    timeout: 30
+    max_requests: 1000
+    
+  # Safety service
+  safety:
+    enabled: true
+    endpoint: "/safety"
+    timeout: 10
+    retry_attempts: 3
+    fail_safe: true  # Block on safety failures
+    
+  # Metrics service  
+  metrics:
+    enabled: true
+    endpoint: "/metrics"
+    collection_interval: 10
+    retention_days: 30
+    
+  # Audit service
+  audit:
+    enabled: true
+    async_logging: true
+    storage_backend: "file"
+    retention_days: 90
+
+# Pipeline Configuration
+pipeline:
+  # Text generation pipeline
+  generation:
+    steps:
+      - "input_validation"
+      - "safety_check_input"
+      - "generate_text"
+      - "safety_check_output"
+      - "quality_assessment"
+      - "compliance_check"
+      - "audit_log"
+      - "metrics_collection"
+    
+    # Parallel processing
+    parallel_safety_checks: true
+    parallel_quality_checks: true
+    
+    # Error handling
+    error_handling:
+      retry_on_failure: true
+      max_retries: 3
+      fallback_behavior: "safe_default"
+
+# Integration Points
+integrations:
+  # Model serving
+  model_serving:
+    backend: "huggingface"  # "huggingface", "openai", "custom"
+    load_balancing: true
+    caching: true
+    warm_up: true
+    
+  # Safety integrations
+  safety:
+    pii_detection:
+      service: "internal"  # "internal", "external"
+      endpoint: "/pii/detect"
+      
+    toxicity_classification:
+      service: "internal"
+      endpoint: "/toxicity/classify"
+      external_apis:
+        perspective: false
+        openai: false
+        
+    bias_detection:
+      service: "internal"
+      endpoint: "/bias/detect"
+      
+    compliance_checking:
+      service: "internal"
+      endpoint: "/compliance/check"
+      
+  # Quality integrations
+  quality:
+    bleu_rouge:
+      service: "internal"
+      endpoint: "/quality/bleu_rouge"
+      
+    semantic_similarity:
+      service: "internal"
+      endpoint: "/quality/semantic"
+      
+    custom_metrics:
+      service: "internal"
+      endpoint: "/quality/custom"
+
+# Data Flow Configuration
+data_flow:
+  # Input processing
+  input:
+    validation: true
+    sanitization: true
+    rate_limiting: true
+    
+  # Output processing
+  output:
+    formatting: true
+    filtering: true
+    metadata_injection: true
+    
+  # Intermediate data
+  intermediate:
+    caching: true
+    persistence: false
+    compression: true
+
+# Monitoring and Observability
+monitoring:
+  # Health checks
+  health_checks:
+    enabled: true
+    interval: 30  # seconds
+    endpoints:
+      - "/health"
+      - "/health/safety"
+      - "/health/metrics"
+      - "/health/models"
+    
+  # Metrics collection
+  metrics:
+    collection_enabled: true
+    push_gateway: false
+    pull_interval: 15  # seconds
+    
+  # Distributed tracing
+  tracing:
+    enabled: true
+    service_name: "textnlp"
+    sample_rate: 0.1
+    exporter: "jaeger"  # "jaeger", "zipkin", "datadog"
+    
+  # Logging
+  logging:
+    level: "INFO"
+    format: "json"
+    correlation_id: true
+    structured: true
+
+# Security Configuration
+security:
+  # Authentication
+  authentication:
+    enabled: true
+    method: "api_key"  # "api_key", "jwt", "oauth2"
+    
+  # Authorization
+  authorization:
+    enabled: true
+    rbac: true
+    
+  # Encryption
+  encryption:
+    in_transit: true
+    at_rest: true
+    key_management: "local"  # "local", "aws_kms", "azure_kv", "vault"
+    
+  # Network security
+  network:
+    cors_enabled: true
+    allowed_origins: ["*"]
+    rate_limiting: true
+    ddos_protection: false
+
+# Deployment Configuration
+deployment:
+  # Environment
+  environment: "development"  # "development", "staging", "production"
+  
+  # Scaling
+  scaling:
+    auto_scaling: false
+    min_replicas: 1
+    max_replicas: 10
+    target_cpu: 70
+    target_memory: 80
+    
+  # Resource limits
+  resources:
+    cpu_limit: "2000m"
+    memory_limit: "4Gi"
+    cpu_request: "500m"
+    memory_request: "1Gi"
+    
+  # Storage
+  storage:
+    persistent: true
+    size: "10Gi"
+    class: "fast-ssd"
+
+# External Dependencies
+dependencies:
+  # Databases
+  databases:
+    primary:
+      type: "postgresql"
+      host: "localhost"
+      port: 5432
+      database: "textnlp"
+      connection_pool_size: 10
+      
+    metrics:
+      type: "sqlite"
+      path: "data/metrics.db"
+      
+    cache:
+      type: "redis"
+      host: "localhost"
+      port: 6379
+      ttl: 3600
+      
+  # Message queues
+  message_queues:
+    primary:
+      type: "rabbitmq"  # "rabbitmq", "kafka", "redis"
+      host: "localhost"
+      port: 5672
+      
+  # Object storage
+  object_storage:
+    type: "s3"  # "s3", "gcs", "azure_blob", "local"
+    bucket: "textnlp-data"
+    region: "us-east-1"
+
+# Feature Flags
+feature_flags:
+  # Safety features
+  enable_pii_detection: true
+  enable_toxicity_classification: true
+  enable_bias_detection: true
+  enable_compliance_checking: true
+  
+  # Quality features
+  enable_quality_metrics: true
+  enable_semantic_analysis: true
+  enable_factuality_checking: false
+  
+  # Performance features
+  enable_caching: true
+  enable_batch_processing: true
+  enable_async_processing: true
+  
+  # Experimental features
+  enable_experimental_models: false
+  enable_a_b_testing: false
+  enable_advanced_analytics: true
+
+# Development and Testing
+development:
+  # Debug settings
+  debug_mode: false
+  verbose_logging: false
+  
+  # Testing
+  test_mode: false
+  mock_external_services: false
+  
+  # Local development
+  hot_reload: true
+  auto_restart: true
+  
+  # Profiling
+  profiling_enabled: false
+  profiler: "py-spy"  # "py-spy", "cprofile", "line_profiler"

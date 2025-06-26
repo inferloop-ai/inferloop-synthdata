@@ -1,0 +1,985 @@
+# GPU Access Configuration for TextNLP Platform
+# Phase 2: Foundation Setup
+
+apiVersion: v1
+kind: GPUAccessConfig
+metadata:
+  name: textnlp-gpu-access
+  version: "1.0"
+  environment: production
+
+# GPU Resource Strategy
+gpu_strategy:
+  # GPU allocation strategy
+  allocation_strategy: "workload_based"
+  
+  # GPU tiers for different workloads
+  gpu_tiers:
+    development:
+      gpu_types: ["T4"]
+      max_instances: 2
+      sharing_enabled: true
+      preemptible: true
+      
+    training:
+      gpu_types: ["V100", "A100"]
+      max_instances: 8
+      sharing_enabled: false
+      preemptible: true
+      
+    inference:
+      gpu_types: ["T4", "V100"]
+      max_instances: 10
+      sharing_enabled: true
+      preemptible: false
+      
+    research:
+      gpu_types: ["A100", "H100"]
+      max_instances: 4
+      sharing_enabled: false
+      preemptible: false
+  
+  # Cost optimization
+  cost_optimization:
+    spot_instances: true
+    scheduled_scaling: true
+    idle_shutdown: true
+    resource_quotas: true
+
+# AWS GPU Configuration
+aws_gpu:
+  # GPU instance types
+  instance_types:
+    # T4 instances (cost-effective)
+    g4dn_xlarge:
+      gpu_count: 1
+      gpu_memory: "16GB"
+      gpu_type: "NVIDIA T4"
+      vcpus: 4
+      memory: "16GB"
+      storage: "125GB NVMe SSD"
+      network_performance: "Up to 25 Gbps"
+      use_cases: ["development", "small_inference"]
+      cost_per_hour: "$0.526"
+      
+    g4dn_2xlarge:
+      gpu_count: 1
+      gpu_memory: "16GB"
+      gpu_type: "NVIDIA T4"
+      vcpus: 8
+      memory: "32GB"
+      storage: "225GB NVMe SSD"
+      network_performance: "Up to 25 Gbps"
+      use_cases: ["medium_inference", "fine_tuning"]
+      cost_per_hour: "$0.752"
+    
+    # V100 instances (training)
+    p3_2xlarge:
+      gpu_count: 1
+      gpu_memory: "16GB"
+      gpu_type: "NVIDIA V100"
+      vcpus: 8
+      memory: "61GB"
+      storage: "Local NVMe SSD"
+      network_performance: "Up to 10 Gbps"
+      use_cases: ["medium_training", "inference"]
+      cost_per_hour: "$3.060"
+    
+    p3_8xlarge:
+      gpu_count: 4
+      gpu_memory: "64GB"
+      gpu_type: "NVIDIA V100"
+      vcpus: 32
+      memory: "244GB"
+      storage: "Local NVMe SSD"
+      network_performance: "10 Gbps"
+      use_cases: ["large_training", "distributed_training"]
+      cost_per_hour: "$12.240"
+    
+    # A100 instances (latest generation)
+    p4d_24xlarge:
+      gpu_count: 8
+      gpu_memory: "320GB"
+      gpu_type: "NVIDIA A100"
+      vcpus: 96
+      memory: "1152GB"
+      storage: "8x 1TB NVMe SSD"
+      network_performance: "400 Gbps"
+      use_cases: ["large_scale_training", "large_models"]
+      cost_per_hour: "$32.770"
+  
+  # EKS GPU node groups
+  eks_node_groups:
+    gpu_workers:
+      name: "textnlp-gpu-workers"
+      instance_types: ["g4dn.xlarge", "g4dn.2xlarge", "p3.2xlarge"]
+      
+      # Scaling configuration
+      scaling_config:
+        desired_size: 2
+        max_size: 10
+        min_size: 1
+      
+      # Node group configuration
+      node_config:
+        ami_type: "AL2_x86_64_GPU"
+        capacity_type: "SPOT"  # Use spot instances for cost savings
+        disk_size: 100
+        
+        # Labels and taints
+        labels:
+          node-type: "gpu"
+          workload: "ml"
+          gpu-type: "nvidia"
+        
+        taints:
+          - key: "nvidia.com/gpu"
+            value: "true"
+            effect: "NO_SCHEDULE"
+      
+      # Auto Scaling Groups
+      auto_scaling:
+        scale_down_delay_after_add: "10m"
+        scale_down_unneeded_time: "10m"
+        scale_down_utilization_threshold: 0.5
+        
+        # GPU-specific scaling
+        gpu_scaling:
+          scale_up_threshold: 0.8
+          scale_down_threshold: 0.2
+          metrics: ["gpu_utilization", "gpu_memory_utilization"]
+  
+  # Spot fleet configuration
+  spot_fleet:
+    enabled: true
+    
+    # Spot fleet configuration
+    fleet_config:
+      target_capacity: 10
+      allocation_strategy: "diversified"
+      
+      # Instance specifications
+      launch_specifications:
+        - instance_type: "g4dn.xlarge"
+          spot_price: "$0.40"
+          subnet_ids: ["subnet-gpu-1a", "subnet-gpu-1b"]
+          security_groups: ["sg-gpu-workers"]
+          
+        - instance_type: "g4dn.2xlarge"
+          spot_price: "$0.60"
+          subnet_ids: ["subnet-gpu-1a", "subnet-gpu-1b"]
+          security_groups: ["sg-gpu-workers"]
+      
+      # Spot fleet request configuration
+      spot_fleet_request:
+        iam_fleet_role: "arn:aws:iam::ACCOUNT:role/aws-ec2-spot-fleet-tagging-role"
+        replace_unhealthy_instances: true
+        terminate_instances_with_expiration: true
+        type: "maintain"
+
+# GCP GPU Configuration
+gcp_gpu:
+  # GPU types available
+  gpu_types:
+    nvidia_tesla_t4:
+      memory: "16GB"
+      compute_capability: "7.5"
+      tensor_cores: "2nd gen"
+      use_cases: ["inference", "light_training"]
+      regions: ["us-central1", "us-east1", "europe-west1"]
+      
+    nvidia_tesla_v100:
+      memory: "16GB"
+      compute_capability: "7.0"
+      tensor_cores: "1st gen"
+      use_cases: ["training", "inference"]
+      regions: ["us-central1", "us-east1", "europe-west1"]
+      
+    nvidia_tesla_a100:
+      memory: "40GB"
+      compute_capability: "8.0"
+      tensor_cores: "3rd gen"
+      use_cases: ["large_model_training", "high_performance_inference"]
+      regions: ["us-central1", "europe-west4"]
+  
+  # Machine types with GPU
+  machine_types:
+    # T4 configurations
+    n1_standard_4_t4:
+      machine_type: "n1-standard-4"
+      gpu_type: "nvidia-tesla-t4"
+      gpu_count: 1
+      vcpus: 4
+      memory: "15GB"
+      local_ssd: "375GB"
+      preemptible_available: true
+      
+    n1_standard_8_t4:
+      machine_type: "n1-standard-8"
+      gpu_type: "nvidia-tesla-t4"
+      gpu_count: 1
+      vcpus: 8
+      memory: "30GB"
+      local_ssd: "375GB"
+      preemptible_available: true
+    
+    # V100 configurations
+    n1_standard_8_v100:
+      machine_type: "n1-standard-8"
+      gpu_type: "nvidia-tesla-v100"
+      gpu_count: 1
+      vcpus: 8
+      memory: "30GB"
+      local_ssd: "375GB"
+      preemptible_available: true
+    
+    # A100 configurations
+    a2_highgpu_1g:
+      machine_type: "a2-highgpu-1g"
+      gpu_type: "nvidia-tesla-a100"
+      gpu_count: 1
+      vcpus: 12
+      memory: "85GB"
+      local_ssd: "375GB"
+      preemptible_available: true
+      
+    a2_highgpu_8g:
+      machine_type: "a2-highgpu-8g"
+      gpu_type: "nvidia-tesla-a100"
+      gpu_count: 8
+      vcpus: 96
+      memory: "680GB"
+      local_ssd: "3TB"
+      preemptible_available: true
+  
+  # GKE GPU node pools
+  gke_node_pools:
+    gpu_pool:
+      name: "textnlp-gpu-pool"
+      location: "us-central1"
+      
+      # Node configuration
+      node_config:
+        machine_type: "n1-standard-4"
+        guest_accelerators:
+          - type: "nvidia-tesla-t4"
+            count: 1
+        
+        # Boot disk
+        disk_size_gb: 100
+        disk_type: "pd-ssd"
+        
+        # Preemptible nodes for cost savings
+        preemptible: true
+        
+        # Metadata
+        metadata:
+          disable-legacy-endpoints: "true"
+        
+        # OAuth scopes
+        oauth_scopes:
+          - "https://www.googleapis.com/auth/cloud-platform"
+        
+        # Labels and taints
+        labels:
+          node-type: "gpu"
+          gpu-type: "t4"
+        
+        taints:
+          - key: "nvidia.com/gpu"
+            value: "true"
+            effect: "NO_SCHEDULE"
+      
+      # Auto scaling
+      autoscaling:
+        enabled: true
+        min_node_count: 0
+        max_node_count: 10
+        
+        # Location policy
+        location_policy: "BALANCED"
+      
+      # Management
+      management:
+        auto_repair: true
+        auto_upgrade: true
+        
+        # Upgrade settings
+        upgrade_settings:
+          max_surge: 1
+          max_unavailable: 0
+  
+  # Preemptible instance management
+  preemptible_management:
+    enabled: true
+    
+    # Preemptible configuration
+    preemptible_config:
+      # Automatic restart on preemption
+      automatic_restart: false
+      on_host_maintenance: "TERMINATE"
+      
+      # Preemption handling
+      preemption_handling:
+        checkpoint_frequency: "5 minutes"
+        graceful_shutdown_timeout: "120 seconds"
+        restart_policy: "automatic"
+        
+        # Data persistence
+        persistent_volumes: true
+        snapshot_on_preemption: true
+
+# Azure GPU Configuration
+azure_gpu:
+  # GPU VM sizes
+  vm_sizes:
+    # T4 equivalent (NCas_T4_v3 series)
+    standard_nc4as_t4_v3:
+      vcpus: 4
+      memory: "28GB"
+      gpu_count: 1
+      gpu_type: "NVIDIA Tesla T4"
+      gpu_memory: "16GB"
+      temp_storage: "180GB SSD"
+      max_data_disks: 8
+      network_performance: "Moderate"
+      
+    standard_nc8as_t4_v3:
+      vcpus: 8
+      memory: "56GB"
+      gpu_count: 1
+      gpu_type: "NVIDIA Tesla T4"
+      gpu_memory: "16GB"
+      temp_storage: "360GB SSD"
+      max_data_disks: 16
+      network_performance: "High"
+    
+    # V100 (NC_v3 series)
+    standard_nc6s_v3:
+      vcpus: 6
+      memory: "112GB"
+      gpu_count: 1
+      gpu_type: "NVIDIA Tesla V100"
+      gpu_memory: "16GB"
+      temp_storage: "736GB SSD"
+      max_data_disks: 12
+      network_performance: "High"
+    
+    standard_nc12s_v3:
+      vcpus: 12
+      memory: "224GB"
+      gpu_count: 2
+      gpu_type: "NVIDIA Tesla V100"
+      gpu_memory: "32GB"
+      temp_storage: "1474GB SSD"
+      max_data_disks: 24
+      network_performance: "High"
+    
+    # A100 (ND A100 v4 series)
+    standard_nd96ads_a100_v4:
+      vcpus: 96
+      memory: "900GB"
+      gpu_count: 8
+      gpu_type: "NVIDIA A100"
+      gpu_memory: "320GB"
+      temp_storage: "6400GB SSD"
+      max_data_disks: 32
+      network_performance: "Extremely High"
+  
+  # AKS GPU node pools
+  aks_node_pools:
+    gpu_nodepool:
+      name: "textnlpgpu"
+      vm_size: "Standard_NC4as_T4_v3"
+      
+      # Node count
+      node_count: 2
+      min_count: 1
+      max_count: 10
+      
+      # Auto scaling
+      enable_auto_scaling: true
+      
+      # Node pool configuration
+      node_pool_config:
+        os_type: "Linux"
+        os_disk_size_gb: 128
+        os_disk_type: "Premium_LRS"
+        
+        # Spot instances
+        spot_max_price: 0.5  # Maximum price per hour
+        priority: "Spot"
+        eviction_policy: "Delete"
+        
+        # Labels and taints
+        node_labels:
+          node-type: "gpu"
+          gpu-type: "t4"
+          workload: "ml"
+        
+        node_taints:
+          - "nvidia.com/gpu=true:NoSchedule"
+      
+      # GPU driver installation
+      gpu_instance_profile: "MIG1g"  # Multi-Instance GPU profile
+  
+  # Azure Spot VMs
+  spot_vms:
+    enabled: true
+    
+    # Spot configuration
+    spot_config:
+      eviction_policy: "Deallocate"
+      max_price: 0.5
+      
+      # Spot VM scale sets
+      scale_sets:
+        - name: "textnlp-gpu-spot-vmss"
+          vm_size: "Standard_NC4as_T4_v3"
+          capacity: 5
+          
+          # Scaling profile
+          scaling_profile:
+            min_capacity: 1
+            max_capacity: 20
+            default_capacity: 3
+            
+            # Scaling rules
+            scale_out_rule:
+              metric: "Percentage CPU"
+              threshold: 70
+              time_grain: "PT1M"
+              statistic: "Average"
+              time_window: "PT5M"
+              time_aggregation: "Average"
+              operator: "GreaterThan"
+              scale_action:
+                direction: "Increase"
+                type: "ChangeCount"
+                value: 1
+                cooldown: "PT5M"
+
+# On-Premises GPU Configuration
+onprem_gpu:
+  # GPU hardware inventory
+  hardware_inventory:
+    # Data center 1
+    datacenter_1:
+      location: "Primary DC"
+      
+      # GPU servers
+      gpu_servers:
+        - hostname: "gpu-node-01"
+          gpu_count: 2
+          gpu_type: "NVIDIA RTX A6000"
+          gpu_memory: "96GB"
+          cpu: "Intel Xeon Gold 6348"
+          memory: "256GB"
+          storage: "2TB NVMe SSD"
+          network: "25GbE"
+          
+        - hostname: "gpu-node-02"
+          gpu_count: 4
+          gpu_type: "NVIDIA A100"
+          gpu_memory: "160GB"
+          cpu: "AMD EPYC 7763"
+          memory: "512GB"
+          storage: "4TB NVMe SSD"
+          network: "100GbE"
+        
+        - hostname: "gpu-node-03"
+          gpu_count: 8
+          gpu_type: "NVIDIA H100"
+          gpu_memory: "640GB"
+          cpu: "Intel Xeon Platinum 8480+"
+          memory: "1TB"
+          storage: "8TB NVMe SSD"
+          network: "200GbE"
+  
+  # Kubernetes GPU configuration
+  kubernetes_gpu:
+    # NVIDIA GPU Operator
+    nvidia_gpu_operator:
+      enabled: true
+      version: "23.9.1"
+      namespace: "gpu-operator"
+      
+      # Operator configuration
+      operator_config:
+        driver:
+          enabled: true
+          version: "525.125.06"
+          use_precompiled: true
+          
+        toolkit:
+          enabled: true
+          version: "1.14.3"
+          
+        device_plugin:
+          enabled: true
+          config:
+            sharing:
+              strategy: "time-slicing"
+              replicas: 2
+              
+        dcgm:
+          enabled: true
+          
+        dcgm_exporter:
+          enabled: true
+          service_monitor:
+            enabled: true
+            
+        gfd:  # GPU Feature Discovery
+          enabled: true
+          
+        mig:  # Multi-Instance GPU
+          strategy: "single"
+          
+        node_status_exporter:
+          enabled: true
+          
+        validator:
+          plugin:
+            enabled: true
+          operator:
+            enabled: true
+            
+    # GPU resource allocation
+    resource_allocation:
+      # Resource policies
+      resource_policies:
+        development:
+          gpu_limit: 1
+          memory_limit: "16Gi"
+          time_limit: "8h"
+          
+        training:
+          gpu_limit: 4
+          memory_limit: "64Gi"
+          time_limit: "24h"
+          
+        production:
+          gpu_limit: 8
+          memory_limit: "128Gi"
+          time_limit: "unlimited"
+      
+      # GPU sharing configuration
+      gpu_sharing:
+        time_slicing:
+          enabled: true
+          default_replicas: 2
+          
+          # Per-node configuration
+          node_configs:
+            - node_selector:
+                node-type: "gpu-development"
+              replicas: 4
+              
+            - node_selector:
+                node-type: "gpu-production"
+              replicas: 1
+        
+        # MIG (Multi-Instance GPU) for A100/H100
+        mig:
+          enabled: true
+          
+          # MIG profiles
+          profiles:
+            - gpu_type: "A100"
+              profile: "1g.5gb"
+              instances: 7
+              
+            - gpu_type: "A100"
+              profile: "2g.10gb"
+              instances: 3
+              
+            - gpu_type: "H100"
+              profile: "1g.12gb"
+              instances: 7
+  
+  # GPU cluster management
+  cluster_management:
+    # Slurm integration
+    slurm:
+      enabled: true
+      
+      # GPU scheduling
+      gpu_scheduling:
+        scheduler: "sched/backfill"
+        
+        # GPU resource types
+        gres_types:
+          - name: "gpu:t4"
+            count: 8
+            file: "/dev/nvidia[0-7]"
+            
+          - name: "gpu:a100"
+            count: 16
+            file: "/dev/nvidia[0-15]"
+            
+          - name: "gpu:h100"
+            count: 8
+            file: "/dev/nvidia[0-7]"
+        
+        # Scheduling policies
+        scheduling_policies:
+          - name: "gpu_fair_share"
+            algorithm: "fair_tree"
+            
+          - name: "gpu_priority"
+            algorithm: "multifactor"
+            factors:
+              - "fairshare"
+              - "age"
+              - "qos"
+              - "partition"
+    
+    # Kubernetes scheduling
+    kubernetes_scheduling:
+      # Extended resources
+      extended_resources:
+        nvidia.com/gpu: true
+        nvidia.com/mig-1g.5gb: true
+        nvidia.com/mig-2g.10gb: true
+        
+      # Node affinity
+      node_affinity:
+        gpu_workloads:
+          required_during_scheduling_ignored_during_execution:
+            node_selector_terms:
+              - match_expressions:
+                  - key: "accelerator"
+                    operator: "In"
+                    values: ["nvidia-tesla-t4", "nvidia-tesla-a100", "nvidia-tesla-h100"]
+      
+      # Pod anti-affinity for GPU sharing
+      pod_anti_affinity:
+        preferred_during_scheduling_ignored_during_execution:
+          - weight: 100
+            pod_affinity_term:
+              label_selector:
+                match_expressions:
+                  - key: "gpu-intensive"
+                    operator: "In"
+                    values: ["true"]
+              topology_key: "kubernetes.io/hostname"
+
+# GPU Access Control
+gpu_access_control:
+  # User-based access control
+  user_access:
+    # GPU quotas by user role
+    quotas:
+      ml_engineer:
+        max_gpus: 4
+        max_gpu_hours_per_day: 32
+        allowed_gpu_types: ["T4", "V100", "A100"]
+        priority: "normal"
+        
+      data_scientist:
+        max_gpus: 2
+        max_gpu_hours_per_day: 16
+        allowed_gpu_types: ["T4", "V100"]
+        priority: "normal"
+        
+      researcher:
+        max_gpus: 8
+        max_gpu_hours_per_day: 64
+        allowed_gpu_types: ["A100", "H100"]
+        priority: "high"
+        
+      developer:
+        max_gpus: 1
+        max_gpu_hours_per_day: 8
+        allowed_gpu_types: ["T4"]
+        priority: "low"
+  
+  # Project-based quotas
+  project_quotas:
+    textnlp_development:
+      max_gpus: 10
+      max_gpu_hours_per_month: 1000
+      cost_budget: "$5000"
+      
+    textnlp_production:
+      max_gpus: 20
+      max_gpu_hours_per_month: 5000
+      cost_budget: "$25000"
+      
+    textnlp_research:
+      max_gpus: 15
+      max_gpu_hours_per_month: 3000
+      cost_budget: "$15000"
+  
+  # Time-based access control
+  time_based_access:
+    # Business hours scheduling
+    business_hours:
+      enabled: true
+      start_time: "08:00"
+      end_time: "18:00"
+      timezone: "UTC"
+      
+      # Priority during business hours
+      priority_boost:
+        production_workloads: 200
+        development_workloads: 100
+        research_workloads: 150
+    
+    # Off-hours scheduling
+    off_hours:
+      enabled: true
+      
+      # Batch job preference during off-hours
+      batch_preference: true
+      preemptible_preference: true
+      cost_optimization: true
+
+# GPU Monitoring and Observability
+gpu_monitoring:
+  # GPU metrics collection
+  metrics:
+    # Hardware metrics
+    hardware_metrics:
+      - "gpu_utilization_percent"
+      - "gpu_memory_utilization_percent"
+      - "gpu_temperature_celsius"
+      - "gpu_power_draw_watts"
+      - "gpu_fan_speed_percent"
+      - "gpu_clock_speed_mhz"
+      - "gpu_memory_clock_speed_mhz"
+      
+    # Application metrics
+    application_metrics:
+      - "model_inference_latency"
+      - "training_throughput"
+      - "batch_size"
+      - "tokens_per_second"
+      - "samples_per_second"
+      - "memory_efficiency"
+      
+    # Cost metrics
+    cost_metrics:
+      - "cost_per_hour"
+      - "cost_per_inference"
+      - "cost_per_training_epoch"
+      - "cost_efficiency_ratio"
+  
+  # Monitoring tools
+  monitoring_tools:
+    # NVIDIA DCGM
+    nvidia_dcgm:
+      enabled: true
+      export_interval: "10s"
+      
+      # DCGM exporter configuration
+      dcgm_exporter:
+        port: 9400
+        metrics_config: "/etc/dcgm-exporter/default-counters.csv"
+        
+        # Custom metrics
+        custom_metrics:
+          - "DCGM_FI_DEV_GPU_UTIL"
+          - "DCGM_FI_DEV_MEM_COPY_UTIL"
+          - "DCGM_FI_DEV_ENC_UTIL"
+          - "DCGM_FI_DEV_DEC_UTIL"
+    
+    # Prometheus integration
+    prometheus:
+      enabled: true
+      
+      # GPU-specific alert rules
+      alert_rules:
+        - name: "GPUHighUtilization"
+          condition: "gpu_utilization_percent > 90"
+          duration: "5m"
+          severity: "warning"
+          
+        - name: "GPUHighTemperature"
+          condition: "gpu_temperature_celsius > 85"
+          duration: "2m"
+          severity: "critical"
+          
+        - name: "GPUMemoryExhaustion"
+          condition: "gpu_memory_utilization_percent > 95"
+          duration: "1m"
+          severity: "critical"
+          
+        - name: "GPUPowerLimitReached"
+          condition: "gpu_power_draw_watts > gpu_power_limit_watts * 0.95"
+          duration: "5m"
+          severity: "warning"
+    
+    # Grafana dashboards
+    grafana_dashboards:
+      - "GPU Cluster Overview"
+      - "GPU Node Details"
+      - "ML Workload Performance"
+      - "GPU Cost Analysis"
+      - "GPU Utilization Trends"
+
+# GPU Optimization and Performance
+gpu_optimization:
+  # Performance tuning
+  performance_tuning:
+    # NVIDIA settings
+    nvidia_settings:
+      # Persistence mode
+      persistence_mode: true
+      
+      # Power management
+      power_management:
+        power_limit: "default"  # Use card default
+        auto_boost: true
+        
+      # Memory clock optimization
+      memory_clock:
+        optimization: "max_performance"
+        
+      # Compute mode
+      compute_mode: "DEFAULT"  # Allow multiple processes
+    
+    # CUDA optimization
+    cuda_optimization:
+      # CUDA runtime settings
+      cuda_runtime:
+        cuda_visible_devices: "all"
+        cuda_device_order: "FASTEST_FIRST"
+        
+      # Memory management
+      memory_management:
+        cuda_memory_pool: true
+        memory_fraction: 0.9
+        allow_growth: true
+        
+      # Compute capability targeting
+      compute_capability:
+        min_compute_capability: "7.0"
+        target_architectures: ["sm_70", "sm_75", "sm_80", "sm_86", "sm_89", "sm_90"]
+  
+  # Workload optimization
+  workload_optimization:
+    # Model optimization
+    model_optimization:
+      # Precision optimization
+      mixed_precision: true
+      fp16_training: true
+      int8_inference: true
+      
+      # Model parallelism
+      model_parallelism:
+        data_parallel: true
+        model_parallel: true
+        pipeline_parallel: true
+        
+      # Batch optimization
+      dynamic_batching: true
+      optimal_batch_size_detection: true
+    
+    # Framework optimization
+    framework_optimization:
+      # PyTorch optimizations
+      pytorch:
+        torch_compile: true
+        channels_last: true
+        cuda_graphs: true
+        
+      # TensorFlow optimizations
+      tensorflow:
+        xla_compilation: true
+        mixed_precision_policy: "mixed_float16"
+        gpu_memory_growth: true
+      
+      # ONNX Runtime optimizations
+      onnx_runtime:
+        graph_optimization_level: "ORT_ENABLE_ALL"
+        execution_providers: ["CUDAExecutionProvider", "CPUExecutionProvider"]
+
+# Disaster Recovery and Backup
+gpu_disaster_recovery:
+  # GPU state backup
+  state_backup:
+    # Model checkpointing
+    model_checkpointing:
+      frequency: "every_epoch"
+      storage_location: "persistent_volume"
+      compression: true
+      
+      # Incremental backups
+      incremental_backup: true
+      delta_compression: true
+      
+    # GPU configuration backup
+    config_backup:
+      nvidia_driver_settings: true
+      cuda_configuration: true
+      container_runtime_config: true
+      kubernetes_gpu_config: true
+  
+  # Failover strategies
+  failover:
+    # GPU node failover
+    node_failover:
+      automatic_failover: true
+      health_check_interval: "30s"
+      failure_threshold: 3
+      
+      # Workload migration
+      workload_migration:
+        live_migration: false  # Not supported for GPU workloads
+        checkpoint_restart: true
+        state_preservation: true
+    
+    # Multi-region failover
+    multi_region_failover:
+      enabled: true
+      primary_region: "us-east-1"
+      secondary_region: "us-west-2"
+      
+      # Data replication
+      data_replication:
+        model_sync: true
+        checkpoint_sync: true
+        configuration_sync: true
+
+# Compliance and Security
+gpu_compliance:
+  # Security configurations
+  security:
+    # GPU isolation
+    gpu_isolation:
+      hardware_isolation: true
+      process_isolation: true
+      memory_isolation: true
+      
+      # Multi-tenant isolation
+      multi_tenant_isolation:
+        namespace_isolation: true
+        cgroup_isolation: true
+        seccomp_profiles: true
+    
+    # Secure boot
+    secure_boot:
+      uefi_secure_boot: true
+      driver_signature_verification: true
+      
+    # Audit logging
+    audit_logging:
+      gpu_access_logging: true
+      command_auditing: true
+      configuration_change_logging: true
+  
+  # Compliance standards
+  compliance_standards:
+    # Export control compliance
+    export_control:
+      itar_compliance: true
+      ear_compliance: true
+      restricted_countries_blocking: true
+      
+    # Data protection
+    data_protection:
+      gdpr_compliance: true
+      gpu_memory_clearing: true
+      secure_deletion: true

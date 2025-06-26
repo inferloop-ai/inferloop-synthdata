@@ -1,0 +1,1113 @@
+# On-Premises Compute Configuration for TextNLP Platform
+# Phase 3: Core Infrastructure Deployment
+
+apiVersion: v1
+kind: ComputeConfig
+metadata:
+  name: textnlp-onprem-compute
+  version: "1.0"
+  environment: production
+  platform: onpremises
+
+# Kubernetes Cluster Configuration
+kubernetes_cluster:
+  name: "textnlp-production"
+  version: "1.28.3"
+  
+  # Cluster configuration
+  cluster_config:
+    # Control plane configuration
+    control_plane:
+      endpoint: "https://textnlp-k8s-api.local:6443"
+      certificate_authority_data: "LS0tLS1CRUdJTi..."  # Base64 encoded CA cert
+      
+      # High availability setup
+      ha_config:
+        enabled: true
+        load_balancer_ip: "10.100.1.10"
+        load_balancer_type: "haproxy"
+        
+        # Control plane nodes
+        masters:
+          - hostname: "master-01"
+            ip: "10.100.1.11"
+            role: "master"
+          - hostname: "master-02"
+            ip: "10.100.1.12"
+            role: "master"
+          - hostname: "master-03"
+            ip: "10.100.1.13"
+            role: "master"
+    
+    # Network configuration
+    network_config:
+      pod_cidr: "10.244.0.0/16"
+      service_cidr: "10.96.0.0/12"
+      cluster_dns: "10.96.0.10"
+      
+      # CNI configuration
+      cni:
+        plugin: "calico"
+        version: "v3.26.3"
+        
+        # Calico configuration
+        calico_config:
+          backend: "bird"
+          encapsulation: "vxlan"
+          nat_outgoing: true
+          ipv4_pool_cidr: "10.244.0.0/16"
+          ipv4_pool_block_size: 26
+          
+          # Felix configuration
+          felix_config:
+            log_severity_screen: "Info"
+            bpf_enabled: true
+            bpf_log_level: "Info"
+            iptables_backend: "Auto"
+    
+    # etcd configuration
+    etcd:
+      version: "3.5.9"
+      data_dir: "/var/lib/etcd"
+      
+      # Cluster configuration
+      cluster_config:
+        initial_cluster_state: "new"
+        initial_cluster_token: "textnlp-etcd-cluster"
+        
+        # Members
+        members:
+          - name: "etcd-01"
+            host: "10.100.1.11"
+            peer_port: 2380
+            client_port: 2379
+          - name: "etcd-02"
+            host: "10.100.1.12"
+            peer_port: 2380
+            client_port: 2379
+          - name: "etcd-03"
+            host: "10.100.1.13"
+            peer_port: 2380
+            client_port: 2379
+      
+      # Performance tuning
+      performance_config:
+        heartbeat_interval: "100ms"
+        election_timeout: "1000ms"
+        snapshot_count: 100000
+        max_snapshots: 10
+        max_wals: 10
+      
+      # Backup configuration
+      backup_config:
+        enabled: true
+        schedule: "0 2 * * *"  # Daily at 2 AM
+        retention_days: 30
+        storage_path: "/backup/etcd"
+        compression: true
+
+# Node Configuration
+nodes:
+  # Master nodes
+  master_nodes:
+    count: 3
+    
+    # Hardware specifications
+    hardware_specs:
+      cpu_cores: 16
+      memory_gb: 64
+      storage_gb: 500
+      storage_type: "NVMe SSD"
+      network_interfaces:
+        - name: "eth0"
+          speed: "10Gbps"
+          ip_range: "10.100.1.11-13"
+    
+    # Software configuration
+    software_config:
+      os: "Ubuntu 22.04 LTS"
+      kernel_version: "5.15.0"
+      container_runtime: "containerd"
+      container_runtime_version: "1.7.1"
+      
+      # System optimizations
+      system_config:
+        swap_disabled: true
+        vm_max_map_count: 262144
+        fs_file_max: 2097152
+        net_core_somaxconn: 65535
+        
+        # Security settings
+        selinux_enforcing: true
+        firewall_enabled: true
+        
+        # Performance tuning
+        cpu_governor: "performance"
+        transparent_hugepages: "never"
+        vm_swappiness: 1
+    
+    # Node labels
+    labels:
+      node-role.kubernetes.io/control-plane: ""
+      node-role.kubernetes.io/master: ""
+      node-type: "master"
+      platform: "onpremises"
+    
+    # Node taints
+    taints:
+      - key: "node-role.kubernetes.io/control-plane"
+        effect: "NoSchedule"
+      - key: "node-role.kubernetes.io/master"
+        effect: "NoSchedule"
+
+  # CPU worker nodes
+  cpu_worker_nodes:
+    count: 5
+    
+    # Hardware specifications
+    hardware_specs:
+      cpu_cores: 32
+      memory_gb: 128
+      storage_gb: 1000
+      storage_type: "NVMe SSD"
+      network_interfaces:
+        - name: "eth0"
+          speed: "25Gbps"
+          ip_range: "10.100.1.21-25"
+    
+    # Software configuration
+    software_config:
+      os: "Ubuntu 22.04 LTS"
+      kernel_version: "5.15.0"
+      container_runtime: "containerd"
+      container_runtime_version: "1.7.1"
+      
+      # CPU optimizations
+      cpu_config:
+        isolated_cpus: "2-31"  # Reserve CPUs for workloads
+        numa_balancing: false
+        cpu_scaling_governor: "performance"
+        
+        # CPU affinity for containers
+        cpu_affinity:
+          system_pods: "0-1"
+          user_pods: "2-31"
+      
+      # Memory optimizations
+      memory_config:
+        hugepages_2mb: 1024  # 2GB of hugepages
+        hugepages_1gb: 8     # 8GB of 1GB hugepages
+        vm_dirty_ratio: 15
+        vm_dirty_background_ratio: 5
+      
+      # Network optimizations
+      network_config:
+        tcp_congestion_control: "bbr"
+        tcp_window_scaling: true
+        tcp_timestamps: true
+        tcp_sack: true
+        
+        # Buffer sizes
+        rmem_max: 134217728
+        wmem_max: 134217728
+        rmem_default: 262144
+        wmem_default: 262144
+    
+    # Node labels
+    labels:
+      node-role.kubernetes.io/worker: ""
+      node-type: "cpu"
+      workload: "general"
+      platform: "onpremises"
+
+  # GPU worker nodes
+  gpu_worker_nodes:
+    count: 3
+    
+    # Hardware specifications
+    hardware_specs:
+      cpu_cores: 64
+      memory_gb: 512
+      storage_gb: 2000
+      storage_type: "NVMe SSD"
+      network_interfaces:
+        - name: "eth0"
+          speed: "100Gbps"
+          ip_range: "10.100.1.31-33"
+      
+      # GPU specifications
+      gpus:
+        - type: "NVIDIA RTX A6000"
+          count: 2
+          memory_gb: 48
+          cuda_cores: 10752
+          tensor_cores: "3rd Gen"
+          nvlink: true
+        - type: "NVIDIA A100"
+          count: 4
+          memory_gb: 40
+          cuda_cores: 6912
+          tensor_cores: "3rd Gen"
+          nvlink: true
+          mig_supported: true
+        - type: "NVIDIA H100"
+          count: 8
+          memory_gb: 80
+          cuda_cores: 16896
+          tensor_cores: "4th Gen"
+          nvlink: true
+          mig_supported: true
+    
+    # Software configuration
+    software_config:
+      os: "Ubuntu 22.04 LTS"
+      kernel_version: "5.15.0"
+      container_runtime: "containerd"
+      container_runtime_version: "1.7.1"
+      
+      # NVIDIA software stack
+      nvidia_config:
+        driver_version: "525.125.06"
+        cuda_version: "11.8"
+        cudnn_version: "8.7.0"
+        nccl_version: "2.18.1"
+        tensorrt_version: "8.6.1"
+        
+        # NVIDIA Container Toolkit
+        nvidia_container_toolkit:
+          version: "1.14.3"
+          runtime: "nvidia"
+          
+          # Runtime configuration
+          runtime_config:
+            runtimes:
+              nvidia:
+                path: "/usr/bin/nvidia-container-runtime"
+                runtimeArgs: []
+        
+        # NVIDIA persistence daemon
+        nvidia_persistenced:
+          enabled: true
+          persistence_mode: true
+        
+        # GPU settings
+        gpu_settings:
+          power_limit: "default"
+          compute_mode: "DEFAULT"
+          ecc_enabled: true
+          auto_boost: true
+      
+      # GPU optimizations
+      gpu_config:
+        # CUDA optimizations
+        cuda_visible_devices: "all"
+        cuda_device_order: "FASTEST_FIRST"
+        cuda_cache_disable: false
+        
+        # Memory management
+        gpu_memory_fraction: 0.9
+        allow_memory_growth: true
+        
+        # Multi-Instance GPU (MIG) configuration
+        mig_config:
+          enabled: true
+          
+          # MIG profiles for A100
+          a100_profiles:
+            - profile: "1g.5gb"
+              instances: 7
+            - profile: "2g.10gb"
+              instances: 3
+          
+          # MIG profiles for H100
+          h100_profiles:
+            - profile: "1g.12gb"
+              instances: 7
+            - profile: "3g.39gb"
+              instances: 2
+    
+    # Node labels
+    labels:
+      node-role.kubernetes.io/worker: ""
+      node-type: "gpu"
+      workload: "ml"
+      gpu-type: "nvidia"
+      platform: "onpremises"
+      accelerator: "nvidia-gpu"
+    
+    # Node taints
+    taints:
+      - key: "nvidia.com/gpu"
+        value: "true"
+        effect: "NoSchedule"
+      - key: "inferloop.ai/gpu"
+        value: "true"
+        effect: "NoSchedule"
+
+# Container Runtime Configuration
+container_runtime:
+  # containerd configuration
+  containerd:
+    version: "1.7.1"
+    
+    # Runtime configuration
+    runtime_config:
+      default_runtime_name: "runc"
+      
+      # Runtime handlers
+      runtimes:
+        runc:
+          runtime_type: "io.containerd.runc.v2"
+          options:
+            systemd_cgroup: true
+        
+        nvidia:
+          runtime_type: "io.containerd.runc.v2"
+          options:
+            binary_name: "/usr/bin/nvidia-container-runtime"
+            systemd_cgroup: true
+    
+    # CRI configuration
+    cri_config:
+      sandbox_image: "k8s.gcr.io/pause:3.9"
+      max_container_log_line_size: 16384
+      max_concurrent_downloads: 10
+      
+      # Registry configuration
+      registry:
+        config_path: "/etc/containerd/certs.d"
+        
+        mirrors:
+          "docker.io":
+            endpoint: ["https://mirror.gcr.io", "https://docker.io"]
+          "gcr.io":
+            endpoint: ["https://gcr.io"]
+          "k8s.gcr.io":
+            endpoint: ["https://k8s.gcr.io"]
+        
+        configs:
+          "harbor.textnlp.local":
+            tls:
+              cert_file: "/etc/containerd/certs.d/harbor/cert.pem"
+              key_file: "/etc/containerd/certs.d/harbor/key.pem"
+              ca_file: "/etc/containerd/certs.d/harbor/ca.pem"
+            auth:
+              username: "textnlp"
+              password: "HARBOR_PASSWORD"
+    
+    # Plugin configuration
+    plugins:
+      cri:
+        systemd_cgroup: true
+        enable_selinux: true
+        
+        # CNI configuration
+        cni:
+          bin_dir: "/opt/cni/bin"
+          conf_dir: "/etc/cni/net.d"
+          max_conf_num: 1
+          conf_template: ""
+      
+      # Snapshotter configuration
+      snapshotter:
+        overlayfs:
+          root_path: "/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs"
+
+# Load Balancing Configuration
+load_balancing:
+  # HAProxy for control plane
+  haproxy:
+    enabled: true
+    version: "2.8"
+    
+    # HAProxy configuration
+    config:
+      global:
+        maxconn: 4096
+        log: "127.0.0.1:514 local0"
+        chroot: "/var/lib/haproxy"
+        stats_socket: "/run/haproxy/admin.sock mode 660 level admin"
+        stats_timeout: "30s"
+        user: "haproxy"
+        group: "haproxy"
+        daemon: true
+      
+      defaults:
+        mode: "tcp"
+        log: "global"
+        option: "tcplog"
+        timeout_connect: "5000ms"
+        timeout_client: "50000ms"
+        timeout_server: "50000ms"
+        errorfile: "400 /etc/haproxy/errors/400.http"
+      
+      # API server load balancing
+      frontend_apiserver:
+        name: "kubernetes-apiserver"
+        bind: "10.100.1.10:6443"
+        default_backend: "kubernetes-apiserver"
+      
+      backend_apiserver:
+        name: "kubernetes-apiserver"
+        balance: "roundrobin"
+        option: "tcp-check"
+        
+        servers:
+          - name: "master-01"
+            address: "10.100.1.11:6443"
+            check: "check fall 3 rise 2"
+          - name: "master-02"
+            address: "10.100.1.12:6443"
+            check: "check fall 3 rise 2"
+          - name: "master-03"
+            address: "10.100.1.13:6443"
+            check: "check fall 3 rise 2"
+  
+  # MetalLB for service load balancing
+  metallb:
+    enabled: true
+    version: "v0.13.12"
+    
+    # Address pools
+    address_pools:
+      - name: "textnlp-pool"
+        protocol: "layer2"
+        addresses:
+          - "10.100.1.100-10.100.1.200"
+        
+        # BGP configuration
+        bgp_config:
+          enabled: false
+          local_asn: 65001
+          peer_asn: 65000
+          peer_address: "10.100.1.1"
+      
+      - name: "gpu-pool"
+        protocol: "layer2"
+        addresses:
+          - "10.100.2.100-10.100.2.150"
+
+# Storage Configuration
+storage:
+  # Local storage
+  local_storage:
+    # Local Path Provisioner
+    local_path_provisioner:
+      enabled: true
+      version: "v0.0.24"
+      default_path: "/opt/local-path-provisioner"
+      
+      # Storage classes
+      storage_classes:
+        - name: "local-path"
+          reclaim_policy: "Delete"
+          volume_binding_mode: "WaitForFirstConsumer"
+        
+        - name: "fast-ssd"
+          reclaim_policy: "Retain"
+          volume_binding_mode: "WaitForFirstConsumer"
+          node_path: "/mnt/nvme-ssd"
+    
+    # OpenEBS for advanced local storage
+    openebs:
+      enabled: true
+      version: "3.9.0"
+      
+      # Storage engines
+      storage_engines:
+        # Local PV for high performance
+        local_pv:
+          enabled: true
+          device_discovery: true
+          
+          # Block device storage
+          block_devices:
+            - device_path: "/dev/nvme0n1"
+              node_selector: "kubernetes.io/hostname=worker-01"
+            - device_path: "/dev/nvme1n1"
+              node_selector: "kubernetes.io/hostname=worker-02"
+        
+        # cStor for replicated storage
+        cstor:
+          enabled: true
+          default_pool_size: "3"
+          
+          # Pool configuration
+          pools:
+            - name: "cstor-pool-01"
+              type: "mirror"
+              devices: ["/dev/sdb", "/dev/sdc"]
+              node_selector: "node-type=cpu"
+  
+  # Network storage
+  network_storage:
+    # NFS for shared storage
+    nfs:
+      enabled: true
+      
+      # NFS server configuration
+      nfs_server:
+        enabled: true
+        export_path: "/storage/kubernetes"
+        export_options: "rw,sync,no_subtree_check,no_root_squash"
+        
+        # Exports
+        exports:
+          - path: "/storage/models"
+            size: "10Ti"
+            clients: "10.100.1.0/24(rw,sync,no_subtree_check,no_root_squash)"
+          - path: "/storage/datasets"
+            size: "5Ti"
+            clients: "10.100.1.0/24(rw,sync,no_subtree_check,no_root_squash)"
+          - path: "/storage/backups"
+            size: "20Ti"
+            clients: "10.100.1.0/24(rw,sync,no_subtree_check,no_root_squash)"
+      
+      # NFS CSI driver
+      nfs_csi_driver:
+        enabled: true
+        version: "v4.5.0"
+        
+        # Storage classes
+        storage_classes:
+          - name: "nfs-models"
+            server: "10.100.1.50"
+            share: "/storage/models"
+            mount_options: ["nfsvers=4.1", "proto=tcp", "fsc"]
+          
+          - name: "nfs-datasets"
+            server: "10.100.1.50"
+            share: "/storage/datasets"
+            mount_options: ["nfsvers=4.1", "proto=tcp", "fsc"]
+    
+    # Ceph for distributed storage
+    ceph:
+      enabled: true
+      version: "17.2.6"  # Quincy
+      
+      # Cluster configuration
+      cluster_config:
+        mon_count: 3
+        mgr_count: 2
+        osd_count: 12
+        
+        # Monitor nodes
+        monitors:
+          - name: "mon-01"
+            host: "10.100.1.41"
+          - name: "mon-02"
+            host: "10.100.1.42"
+          - name: "mon-03"
+            host: "10.100.1.43"
+        
+        # OSD configuration
+        osds:
+          - device: "/dev/sdd"
+            host: "worker-01"
+          - device: "/dev/sde"
+            host: "worker-01"
+          - device: "/dev/sdd"
+            host: "worker-02"
+          - device: "/dev/sde"
+            host: "worker-02"
+      
+      # Storage pools
+      pools:
+        - name: "replicapool"
+          type: "replicated"
+          size: 3
+          min_size: 2
+          pg_num: 128
+          pgp_num: 128
+        
+        - name: "erasure-pool"
+          type: "erasure"
+          k: 4
+          m: 2
+          pg_num: 64
+          pgp_num: 64
+      
+      # Rook operator
+      rook_operator:
+        enabled: true
+        version: "v1.12.7"
+        
+        # CSI drivers
+        csi_drivers:
+          rbd:
+            enabled: true
+          cephfs:
+            enabled: true
+          nfs:
+            enabled: false
+
+# GPU Resource Management
+gpu_management:
+  # NVIDIA GPU Operator
+  nvidia_gpu_operator:
+    enabled: true
+    version: "v23.9.1"
+    namespace: "gpu-operator"
+    
+    # Operator configuration
+    operator_config:
+      driver:
+        enabled: true
+        version: "525.125.06"
+        use_precompiled: false
+        
+        # Driver configuration
+        driver_config:
+          repoConfig:
+            configMapName: "nvidia-driver-repo-config"
+      
+      toolkit:
+        enabled: true
+        version: "1.14.3"
+        
+        # Toolkit configuration
+        toolkit_config:
+          install_dir: "/usr/local/nvidia"
+          
+      device_plugin:
+        enabled: true
+        
+        # Device plugin configuration
+        device_plugin_config:
+          config:
+            sharing:
+              timeSlicing:
+                renameByDefault: false
+                failRequestsGreaterThanOne: false
+                resources:
+                  - name: "nvidia.com/gpu"
+                    replicas: 1
+      
+      dcgm:
+        enabled: true
+        
+        # DCGM configuration
+        dcgm_config:
+          service_monitor:
+            enabled: true
+      
+      dcgm_exporter:
+        enabled: true
+        version: "3.1.8-3.1.5"
+        
+        # DCGM exporter configuration
+        dcgm_exporter_config:
+          service_monitor:
+            enabled: true
+            interval: "30s"
+      
+      gfd:  # GPU Feature Discovery
+        enabled: true
+        version: "v0.8.1"
+      
+      mig:  # Multi-Instance GPU
+        strategy: "mixed"  # Support both MIG and non-MIG
+        
+        # MIG configuration
+        mig_config:
+          config:
+            version: "v1"
+            mig-configs:
+              all-disabled:
+                - devices: ["all"]
+                  mig-enabled: false
+              
+              all-1g.5gb:
+                - devices: ["all"]
+                  mig-enabled: true
+                  mig-devices:
+                    "1g.5gb": 7
+              
+              mixed:
+                - device-filter: ["0x232210DE", "0x233010DE"]  # A100
+                  devices: ["all"]
+                  mig-enabled: true
+                  mig-devices:
+                    "1g.5gb": 2
+                    "2g.10gb": 1
+                    "3g.20gb": 1
+      
+      node_status_exporter:
+        enabled: true
+      
+      validator:
+        plugin:
+          enabled: true
+        operator:
+          enabled: true
+          
+        # Validator configuration
+        validator_config:
+          driver_validation:
+            enabled: true
+          toolkit_validation:
+            enabled: true
+          cuda_validation:
+            enabled: true
+          plugin_validation:
+            enabled: true
+
+  # GPU scheduling and allocation
+  gpu_scheduling:
+    # Extended resources
+    extended_resources:
+      nvidia.com/gpu: true
+      nvidia.com/mig-1g.5gb: true
+      nvidia.com/mig-2g.10gb: true
+      nvidia.com/mig-3g.20gb: true
+    
+    # Node selectors for GPU workloads
+    node_selectors:
+      gpu_inference:
+        node-type: "gpu"
+        workload: "ml"
+      
+      gpu_training:
+        node-type: "gpu"
+        workload: "ml"
+        gpu-memory: "high"
+    
+    # Resource quotas
+    resource_quotas:
+      namespace_quotas:
+        - namespace: "textnlp-gpu"
+          resources:
+            requests.nvidia.com/gpu: "8"
+            limits.nvidia.com/gpu: "8"
+        
+        - namespace: "textnlp-inference"
+          resources:
+            requests.nvidia.com/gpu: "4"
+            limits.nvidia.com/gpu: "4"
+
+# Monitoring and Observability
+monitoring:
+  # Prometheus stack
+  prometheus_stack:
+    enabled: true
+    version: "51.2.0"
+    namespace: "monitoring"
+    
+    # Prometheus configuration
+    prometheus:
+      retention: "30d"
+      storage_size: "500Gi"
+      storage_class: "fast-ssd"
+      
+      # Resource configuration
+      resources:
+        requests:
+          cpu: "2"
+          memory: "8Gi"
+        limits:
+          cpu: "4"
+          memory: "16Gi"
+      
+      # External labels
+      external_labels:
+        cluster: "textnlp-onprem"
+        region: "datacenter-1"
+      
+      # Remote write configuration
+      remote_write:
+        - url: "https://prometheus-remote.textnlp.com/api/v1/write"
+          basic_auth:
+            username: "prometheus"
+            password: "REMOTE_WRITE_PASSWORD"
+    
+    # Grafana configuration
+    grafana:
+      admin_password: "admin123"  # Change in production
+      
+      # Persistence
+      persistence:
+        enabled: true
+        size: "20Gi"
+        storage_class: "fast-ssd"
+      
+      # Data sources
+      datasources:
+        - name: "Prometheus"
+          type: "prometheus"
+          url: "http://prometheus-server.monitoring.svc.cluster.local"
+          is_default: true
+      
+      # Dashboards
+      dashboards:
+        - "kubernetes-cluster-monitoring"
+        - "gpu-monitoring"
+        - "node-exporter-full"
+        - "nvidia-dcgm-exporter"
+    
+    # Alert Manager
+    alertmanager:
+      replicas: 3
+      
+      # Storage
+      storage:
+        size: "10Gi"
+        storage_class: "fast-ssd"
+      
+      # Configuration
+      config:
+        global:
+          smtp_smarthost: "smtp.company.com:587"
+          smtp_from: "alerts@textnlp.local"
+        
+        route:
+          group_by: ["alertname", "cluster", "service"]
+          group_wait: "10s"
+          group_interval: "10s"
+          repeat_interval: "1h"
+          receiver: "web.hook"
+        
+        receivers:
+          - name: "web.hook"
+            webhook_configs:
+              - url: "http://webhook.textnlp.local/alerts"
+                send_resolved: true
+
+  # Node monitoring
+  node_monitoring:
+    # Node Exporter
+    node_exporter:
+      enabled: true
+      version: "v1.6.1"
+      
+      # Collectors
+      collectors:
+        enabled:
+          - "arp"
+          - "bcache"
+          - "bonding"
+          - "btrfs"
+          - "conntrack"
+          - "cpu"
+          - "cpufreq"
+          - "diskstats"
+          - "edac"
+          - "entropy"
+          - "filefd"
+          - "filesystem"
+          - "hwmon"
+          - "infiniband"
+          - "ipvs"
+          - "loadavg"
+          - "mdadm"
+          - "meminfo"
+          - "netclass"
+          - "netdev"
+          - "netstat"
+          - "nfs"
+          - "nfsd"
+          - "nvme"
+          - "os"
+          - "powersupplyclass"
+          - "pressure"
+          - "rapl"
+          - "schedstat"
+          - "sockstat"
+          - "softnet"
+          - "stat"
+          - "textfile"
+          - "thermal_zone"
+          - "time"
+          - "timex"
+          - "udp_queues"
+          - "uname"
+          - "vmstat"
+          - "xfs"
+          - "zfs"
+    
+    # GPU monitoring
+    gpu_monitoring:
+      # DCGM Exporter
+      dcgm_exporter:
+        enabled: true
+        version: "3.1.8-3.1.5"
+        
+        # Metrics configuration
+        metrics_config: |
+          # Format
+          # If line starts with a '#' it is considered a comment
+          # DCGM FIELD, Prometheus metric type, help message
+          
+          # Clocks
+          DCGM_FI_DEV_SM_CLOCK,  gauge, SM clock frequency (in MHz).
+          DCGM_FI_DEV_MEM_CLOCK, gauge, Memory clock frequency (in MHz).
+          
+          # Temperature
+          DCGM_FI_DEV_GPU_TEMP, gauge, GPU temperature (in C).
+          
+          # Power
+          DCGM_FI_DEV_POWER_USAGE,              gauge, Power draw (in W).
+          DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION, counter, Total energy consumption since boot (in mJ).
+          
+          # Utilization
+          DCGM_FI_DEV_GPU_UTIL,      gauge, GPU utilization (in %).
+          DCGM_FI_DEV_MEM_COPY_UTIL, gauge, Memory utilization (in %).
+          DCGM_FI_DEV_ENC_UTIL,      gauge, Encoder utilization (in %).
+          DCGM_FI_DEV_DEC_UTIL,      gauge, Decoder utilization (in %).
+          
+          # Memory
+          DCGM_FI_DEV_FB_FREE, gauge, Framebuffer memory free (in MiB).
+          DCGM_FI_DEV_FB_USED, gauge, Framebuffer memory used (in MiB).
+          
+          # PCIe
+          DCGM_FI_DEV_PCIE_REPLAY_COUNTER, counter, PCIe replay counter.
+          
+          # NVLink
+          DCGM_FI_DEV_NVLINK_BANDWIDTH_TOTAL, counter, NVLink bandwidth counter for all lanes
+
+# Security Configuration
+security:
+  # Pod Security Standards
+  pod_security_standards:
+    default_policy: "restricted"
+    
+    # Namespace policies
+    namespace_policies:
+      - namespace: "kube-system"
+        policy: "privileged"
+      - namespace: "gpu-operator"
+        policy: "privileged"
+      - namespace: "textnlp-api"
+        policy: "baseline"
+      - namespace: "textnlp-gpu"
+        policy: "restricted"
+  
+  # Network policies
+  network_policies:
+    default_deny_all: true
+    
+    # Allow rules
+    allow_rules:
+      - name: "allow-dns"
+        namespace: "all"
+        egress:
+          - to: []
+            ports:
+              - protocol: "UDP"
+                port: 53
+              - protocol: "TCP"
+                port: 53
+      
+      - name: "allow-api-to-gpu"
+        namespace: "textnlp-gpu"
+        ingress:
+          - from:
+              - namespace_selector:
+                  match_labels:
+                    name: "textnlp-api"
+            ports:
+              - protocol: "TCP"
+                port: 8080
+  
+  # RBAC configuration
+  rbac:
+    # Cluster roles
+    cluster_roles:
+      - name: "textnlp-admin"
+        rules:
+          - api_groups: ["*"]
+            resources: ["*"]
+            verbs: ["*"]
+      
+      - name: "textnlp-gpu-user"
+        rules:
+          - api_groups: [""]
+            resources: ["pods", "services"]
+            verbs: ["get", "list", "watch", "create", "update", "patch"]
+          - api_groups: ["apps"]
+            resources: ["deployments"]
+            verbs: ["get", "list", "watch", "create", "update", "patch"]
+          - api_groups: ["batch"]
+            resources: ["jobs"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    
+    # Cluster role bindings
+    cluster_role_bindings:
+      - name: "textnlp-admins"
+        cluster_role: "textnlp-admin"
+        subjects:
+          - kind: "User"
+            name: "admin@textnlp.local"
+            api_group: "rbac.authorization.k8s.io"
+      
+      - name: "textnlp-gpu-users"
+        cluster_role: "textnlp-gpu-user"
+        subjects:
+          - kind: "Group"
+            name: "ml-engineers"
+            api_group: "rbac.authorization.k8s.io"
+
+# Validation and Testing
+validation:
+  # Health checks
+  health_checks:
+    cluster_health:
+      enabled: true
+      check_interval: "60s"
+      timeout: "30s"
+      
+      # Components to check
+      components:
+        - "etcd"
+        - "kube-apiserver"
+        - "kube-controller-manager"
+        - "kube-scheduler"
+        - "kubelet"
+        - "kube-proxy"
+        - "calico-node"
+        - "coredns"
+    
+    node_health:
+      enabled: true
+      check_interval: "30s"
+      timeout: "10s"
+      
+      # Health checks
+      checks:
+        - "node_ready"
+        - "memory_pressure"
+        - "disk_pressure"
+        - "pid_pressure"
+        - "network_available"
+    
+    gpu_health:
+      enabled: true
+      check_interval: "60s"
+      timeout: "30s"
+      
+      # GPU health checks
+      checks:
+        - "nvidia_driver_loaded"
+        - "cuda_runtime_available"
+        - "gpu_temperature_normal"
+        - "gpu_memory_available"
+        - "dcgm_exporter_running"
+  
+  # Performance testing
+  performance_testing:
+    # Benchmark suites
+    benchmarks:
+      - name: "sysbench-cpu"
+        command: "sysbench cpu --cpu-max-prime=20000 --threads=16 run"
+        frequency: "weekly"
+      
+      - name: "sysbench-memory"
+        command: "sysbench memory --memory-block-size=1K --memory-total-size=10G run"
+        frequency: "weekly"
+      
+      - name: "fio-disk"
+        command: "fio --name=randwrite --ioengine=libaio --iodepth=1 --rw=randwrite --bs=4k --direct=0 --size=512M --numjobs=16 --runtime=60 --group_reporting"
+        frequency: "weekly"
+      
+      - name: "nvidia-smi"
+        command: "nvidia-smi -q -d MEMORY,UTILIZATION,ECC,TEMPERATURE,POWER,CLOCK,COMPUTE"
+        frequency: "daily"

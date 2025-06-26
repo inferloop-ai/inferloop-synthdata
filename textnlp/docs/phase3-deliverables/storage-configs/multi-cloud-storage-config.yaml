@@ -1,0 +1,1188 @@
+# Multi-Cloud Storage Configuration for TextNLP Platform
+# Phase 3: Core Infrastructure Deployment
+
+apiVersion: v1
+kind: StorageConfig
+metadata:
+  name: textnlp-storage-config
+  version: "1.0"
+  environment: production
+
+# Storage Strategy
+storage_strategy:
+  # Data tiers based on access patterns
+  data_tiers:
+    hot_tier:
+      description: "Frequently accessed models and datasets"
+      access_pattern: "frequent"
+      storage_type: "ssd"
+      replication: 3
+      compression: false
+      encryption: true
+      backup_frequency: "daily"
+      
+    warm_tier:
+      description: "Occasionally accessed models"
+      access_pattern: "infrequent"
+      storage_type: "standard"
+      replication: 2
+      compression: true
+      encryption: true
+      backup_frequency: "weekly"
+      
+    cold_tier:
+      description: "Archived models and long-term datasets"
+      access_pattern: "rare"
+      storage_type: "archive"
+      replication: 1
+      compression: true
+      encryption: true
+      backup_frequency: "monthly"
+  
+  # Storage distribution strategy
+  distribution_strategy:
+    primary_region: "us-east-1"
+    secondary_regions:
+      - "us-west-2"
+      - "eu-west-1"
+    
+    # Data locality for ML workloads
+    data_locality:
+      models: "co-located_with_compute"
+      datasets: "distributed"
+      cache: "local_ssd"
+      logs: "centralized"
+
+# AWS Storage Configuration
+aws_storage:
+  # S3 Configuration for Models
+  s3_model_storage:
+    buckets:
+      # Production models bucket
+      production_models:
+        name: "textnlp-models-prod"
+        region: "us-east-1"
+        versioning: true
+        
+        # Lifecycle policies
+        lifecycle_policies:
+          - id: "model_lifecycle"
+            status: "Enabled"
+            transitions:
+              - days: 30
+                storage_class: "STANDARD_IA"
+              - days: 90
+                storage_class: "GLACIER"
+              - days: 365
+                storage_class: "DEEP_ARCHIVE"
+        
+        # Encryption configuration
+        encryption:
+          enabled: true
+          type: "SSE-KMS"
+          kms_key_id: "arn:aws:kms:us-east-1:ACCOUNT:key/MODEL-STORAGE-KEY"
+          bucket_key_enabled: true
+        
+        # Replication configuration
+        replication:
+          enabled: true
+          destination_bucket: "textnlp-models-backup-west"
+          destination_region: "us-west-2"
+          storage_class: "STANDARD_IA"
+        
+        # Intelligent tiering
+        intelligent_tiering:
+          enabled: true
+          optional_fields:
+            - "BucketKeyEnabled"
+      
+      # Training datasets bucket
+      training_datasets:
+        name: "textnlp-datasets-prod"
+        region: "us-east-1"
+        versioning: true
+        
+        # Large object configuration
+        multipart_upload:
+          threshold: "64MB"
+          chunk_size: "16MB"
+          max_concurrency: 10
+        
+        # Transfer acceleration
+        transfer_acceleration: true
+        
+        # Event notifications
+        event_notifications:
+          - event: "s3:ObjectCreated:*"
+            destination: "arn:aws:sns:us-east-1:ACCOUNT:dataset-events"
+          - event: "s3:ObjectRemoved:*"
+            destination: "arn:aws:sns:us-east-1:ACCOUNT:dataset-events"
+      
+      # Model cache bucket
+      model_cache:
+        name: "textnlp-cache-prod"
+        region: "us-east-1"
+        versioning: false
+        
+        # Short lifecycle for cache
+        lifecycle_policies:
+          - id: "cache_cleanup"
+            status: "Enabled"
+            expiration:
+              days: 7
+        
+        # Request metrics
+        request_metrics:
+          enabled: true
+          filter: "EntireBucket"
+  
+  # EFS for shared storage
+  efs_shared_storage:
+    file_systems:
+      # Model serving shared storage
+      model_serving:
+        name: "textnlp-model-serving"
+        creation_token: "textnlp-models-efs"
+        
+        # Performance configuration
+        performance_mode: "generalPurpose"  # or "maxIO" for high IOPS
+        throughput_mode: "provisioned"
+        provisioned_throughput: "500"  # MiB/s
+        
+        # Encryption
+        encryption:
+          enabled: true
+          kms_key_id: "arn:aws:kms:us-east-1:ACCOUNT:key/EFS-KEY"
+        
+        # Backup policy
+        backup_policy:
+          status: "ENABLED"
+        
+        # Lifecycle policy
+        lifecycle_policy:
+          - transition_to_ia: "AFTER_30_DAYS"
+          - transition_to_primary_storage_class: "AFTER_1_ACCESS"
+        
+        # Mount targets
+        mount_targets:
+          - subnet_id: "subnet-private-1a"
+            security_groups: ["sg-efs-mount"]
+          - subnet_id: "subnet-private-1b"
+            security_groups: ["sg-efs-mount"]
+          - subnet_id: "subnet-private-1c"
+            security_groups: ["sg-efs-mount"]
+        
+        # Access points
+        access_points:
+          - name: "models"
+            path: "/models"
+            creation_info:
+              owner_uid: 1001
+              owner_gid: 1001
+              permissions: "755"
+          - name: "cache"
+            path: "/cache"
+            creation_info:
+              owner_uid: 1001
+              owner_gid: 1001
+              permissions: "755"
+  
+  # EBS for high-performance storage
+  ebs_storage:
+    volume_types:
+      # gp3 for general purpose
+      gp3_volumes:
+        type: "gp3"
+        size_range: "100-16000"  # GiB
+        iops_range: "3000-16000"
+        throughput_range: "125-1000"  # MiB/s
+        use_cases: ["boot_volumes", "general_workloads"]
+      
+      # io2 for high IOPS requirements
+      io2_volumes:
+        type: "io2"
+        size_range: "4-64000"  # GiB
+        iops_range: "100-256000"
+        iops_per_gib_ratio: "1000:1"
+        use_cases: ["database", "high_performance_ml"]
+      
+      # st1 for throughput-optimized
+      st1_volumes:
+        type: "st1"
+        size_range: "125-16000"  # GiB
+        max_throughput: "500MiB/s"
+        use_cases: ["big_data", "data_warehouses"]
+    
+    # CSI driver configuration
+    ebs_csi_driver:
+      version: "v1.24.0"
+      
+      # Storage classes
+      storage_classes:
+        - name: "gp3-fast"
+          volume_type: "gp3"
+          iops: "10000"
+          throughput: "500"
+          reclaim_policy: "Delete"
+          allow_volume_expansion: true
+        
+        - name: "io2-ultra"
+          volume_type: "io2"
+          iops: "20000"
+          reclaim_policy: "Retain"
+          allow_volume_expansion: true
+        
+        - name: "st1-throughput"
+          volume_type: "st1"
+          reclaim_policy: "Delete"
+          allow_volume_expansion: true
+
+# GCP Storage Configuration
+gcp_storage:
+  # Cloud Storage for models
+  cloud_storage:
+    buckets:
+      # Production models bucket
+      production_models:
+        name: "textnlp-models-prod-gcp"
+        location: "us-central1"
+        storage_class: "STANDARD"
+        
+        # Versioning
+        versioning:
+          enabled: true
+        
+        # Lifecycle management
+        lifecycle:
+          rules:
+            - action:
+                type: "SetStorageClass"
+                storage_class: "NEARLINE"
+              condition:
+                age: 30
+            - action:
+                type: "SetStorageClass"
+                storage_class: "COLDLINE"
+              condition:
+                age: 90
+            - action:
+                type: "SetStorageClass"
+                storage_class: "ARCHIVE"
+              condition:
+                age: 365
+        
+        # Uniform bucket-level access
+        uniform_bucket_level_access:
+          enabled: true
+        
+        # Encryption
+        encryption:
+          default_kms_key_name: "projects/textnlp-prod-001/locations/us-central1/keyRings/storage/cryptoKeys/models"
+        
+        # Retention policy
+        retention_policy:
+          retention_period: "86400"  # 1 day minimum
+        
+        # CORS configuration
+        cors:
+          - origin: ["https://textnlp.company.com"]
+            method: ["GET", "POST", "PUT"]
+            response_header: ["Content-Type"]
+            max_age_seconds: 3600
+      
+      # Training datasets bucket
+      training_datasets:
+        name: "textnlp-datasets-prod-gcp"
+        location: "us-central1"
+        storage_class: "STANDARD"
+        
+        # Autoclass for automatic optimization
+        autoclass:
+          enabled: true
+        
+        # Event notifications
+        notifications:
+          - topic: "projects/textnlp-prod-001/topics/dataset-events"
+            event_types: ["OBJECT_FINALIZE", "OBJECT_DELETE"]
+            payload_format: "JSON_API_V1"
+      
+      # Model cache bucket
+      model_cache:
+        name: "textnlp-cache-prod-gcp"
+        location: "us-central1"
+        storage_class: "STANDARD"
+        
+        # TTL for cache objects
+        lifecycle:
+          rules:
+            - action:
+                type: "Delete"
+              condition:
+                age: 7
+  
+  # Filestore for shared NFS
+  filestore:
+    instances:
+      # High-performance tier for models
+      model_serving:
+        name: "textnlp-models-filestore"
+        location: "us-central1-a"
+        tier: "PREMIUM"  # or "STANDARD", "BASIC_HDD", "BASIC_SSD"
+        capacity_gb: 10240  # 10 TB
+        
+        # Network configuration
+        networks:
+          - network: "projects/textnlp-prod-001/global/networks/textnlp-vpc"
+            modes: ["MODE_IPV4"]
+            reserved_ip_range: "10.0.10.0/29"
+        
+        # File share configuration
+        file_shares:
+          - name: "models"
+            capacity_gb: 5120
+            nfs_export_options:
+              - ip_ranges: ["10.0.0.0/16"]
+                access_mode: "READ_WRITE"
+                squash_mode: "NO_ROOT_SQUASH"
+          - name: "cache"
+            capacity_gb: 2048
+            nfs_export_options:
+              - ip_ranges: ["10.0.0.0/16"]
+                access_mode: "READ_WRITE"
+                squash_mode: "ROOT_SQUASH"
+        
+        # Backup configuration
+        backup_config:
+          enabled: true
+          backup_policies:
+            - name: "daily-backup"
+              daily_backup_start_time:
+                hours: 2
+                minutes: 30
+              retention_days: 30
+  
+  # Persistent Disk configuration
+  persistent_disk:
+    disk_types:
+      # SSD persistent disk
+      pd_ssd:
+        type: "pd-ssd"
+        size_range: "10-65536"  # GB
+        max_iops: 30000
+        max_throughput: "1200MB/s"
+        use_cases: ["high_performance", "databases"]
+      
+      # Balanced persistent disk
+      pd_balanced:
+        type: "pd-balanced"
+        size_range: "10-65536"  # GB
+        baseline_iops: 3000
+        max_throughput: "240MB/s"
+        use_cases: ["general_purpose", "boot_disks"]
+      
+      # Standard persistent disk
+      pd_standard:
+        type: "pd-standard"
+        size_range: "10-65536"  # GB
+        max_throughput: "240MB/s"
+        use_cases: ["backup", "archival"]
+      
+      # Extreme persistent disk
+      pd_extreme:
+        type: "pd-extreme"
+        size_range: "500-65536"  # GB
+        iops_per_gb: 1000
+        max_iops: 100000
+        use_cases: ["ultra_high_performance"]
+    
+    # CSI driver configuration
+    gce_pd_csi_driver:
+      version: "v1.11.1"
+      
+      # Storage classes
+      storage_classes:
+        - name: "fast-ssd"
+          type: "pd-ssd"
+          provisioned-iops-on-create: "10000"
+          reclaim_policy: "Delete"
+          allow_volume_expansion: true
+        
+        - name: "balanced"
+          type: "pd-balanced"
+          reclaim_policy: "Delete"
+          allow_volume_expansion: true
+        
+        - name: "extreme-performance"
+          type: "pd-extreme"
+          provisioned-iops-on-create: "50000"
+          reclaim_policy: "Retain"
+          allow_volume_expansion: true
+
+# Azure Storage Configuration
+azure_storage:
+  # Blob Storage for models
+  blob_storage:
+    storage_accounts:
+      # Premium storage account for models
+      models_storage:
+        name: "textnlpmodelsprod"
+        resource_group: "textnlp-prod-rg"
+        location: "eastus"
+        account_tier: "Premium"
+        account_replication_type: "LRS"
+        account_kind: "BlockBlobStorage"
+        
+        # Containers
+        containers:
+          - name: "production-models"
+            access_type: "private"
+            
+            # Lifecycle management
+            lifecycle_policy:
+              rules:
+                - name: "model_lifecycle"
+                  enabled: true
+                  filters:
+                    blob_types: ["blockBlob"]
+                  actions:
+                    base_blob:
+                      tier_to_cool:
+                        days_after_modification_greater_than: 30
+                      tier_to_archive:
+                        days_after_modification_greater_than: 90
+          
+          - name: "training-datasets"
+            access_type: "private"
+            
+            # Event grid integration
+            event_grid:
+              enabled: true
+              topic_name: "dataset-events"
+              event_types:
+                - "Microsoft.Storage.BlobCreated"
+                - "Microsoft.Storage.BlobDeleted"
+          
+          - name: "model-cache"
+            access_type: "private"
+            
+            # Short-term storage
+            lifecycle_policy:
+              rules:
+                - name: "cache_cleanup"
+                  enabled: true
+                  filters:
+                    blob_types: ["blockBlob"]
+                  actions:
+                    base_blob:
+                      delete:
+                        days_after_modification_greater_than: 7
+        
+        # Encryption
+        encryption:
+          services:
+            blob:
+              enabled: true
+              key_type: "Customer"
+          key_source: "Microsoft.KeyVault"
+          key_vault_properties:
+            key_name: "storage-key"
+            key_version: "current"
+            key_vault_uri: "https://textnlp-kv.vault.azure.net/"
+        
+        # Network rules
+        network_acls:
+          default_action: "Deny"
+          virtual_network_rules:
+            - virtual_network_resource_id: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/textnlp-prod-rg/providers/Microsoft.Network/virtualNetworks/textnlp-vnet/subnets/storage-subnet"
+              action: "Allow"
+          ip_rules:
+            - ip_address_or_range: "203.0.113.0/24"
+              action: "Allow"
+  
+  # Azure Files for shared storage
+  azure_files:
+    file_shares:
+      # Premium file share for models
+      model_serving:
+        name: "models"
+        storage_account: "textnlpmodelsprod"
+        quota: 10240  # GB
+        tier: "Premium"
+        
+        # Access tier
+        access_tier: "Premium"
+        
+        # Backup configuration
+        backup:
+          enabled: true
+          policy_name: "daily-backup"
+          retention_days: 30
+        
+        # Snapshots
+        snapshots:
+          enabled: true
+          schedule: "0 2 * * *"  # Daily at 2 AM
+          retention_count: 7
+      
+      # Standard file share for cache
+      cache_storage:
+        name: "cache"
+        storage_account: "textnlpstandardprod"
+        quota: 2048  # GB
+        tier: "Standard"
+        
+        # SMB protocol settings
+        smb:
+          versions: ["SMB3.0", "SMB3.1.1"]
+          authentication_methods: ["Kerberos", "NTLMv2"]
+          kerberos_ticket_encryption: ["AES-256"]
+          channel_encryption: ["AES-128-CCM", "AES-128-GCM", "AES-256-GCM"]
+  
+  # Managed Disks configuration
+  managed_disks:
+    disk_types:
+      # Premium SSD
+      premium_ssd:
+        type: "Premium_LRS"
+        size_range: "32-32767"  # GB
+        max_iops: 20000
+        max_throughput: "900MB/s"
+        use_cases: ["high_performance", "databases"]
+      
+      # Standard SSD
+      standard_ssd:
+        type: "StandardSSD_LRS"
+        size_range: "32-32767"  # GB
+        max_iops: 6000
+        max_throughput: "750MB/s"
+        use_cases: ["general_purpose", "web_servers"]
+      
+      # Ultra SSD
+      ultra_ssd:
+        type: "UltraSSD_LRS"
+        size_range: "4-65536"  # GB
+        iops_range: "300-160000"
+        throughput_range: "300-2000"  # MB/s
+        use_cases: ["ultra_high_performance", "SAP_HANA"]
+    
+    # CSI driver configuration
+    azure_disk_csi_driver:
+      version: "v1.28.0"
+      
+      # Storage classes
+      storage_classes:
+        - name: "managed-premium"
+          sku_name: "Premium_LRS"
+          reclaim_policy: "Delete"
+          allow_volume_expansion: true
+          volume_binding_mode: "WaitForFirstConsumer"
+        
+        - name: "managed-standard-ssd"
+          sku_name: "StandardSSD_LRS"
+          reclaim_policy: "Delete"
+          allow_volume_expansion: true
+        
+        - name: "ultra-ssd"
+          sku_name: "UltraSSD_LRS"
+          reclaim_policy: "Retain"
+          allow_volume_expansion: true
+          parameters:
+            diskIOPSReadWrite: "10000"
+            diskMBpsReadWrite: "500"
+
+# On-Premises Storage Configuration
+onprem_storage:
+  # Local storage systems
+  local_storage:
+    # Direct attached storage
+    das:
+      nvme_ssds:
+        - device: "/dev/nvme0n1"
+          size: "2TB"
+          node: "worker-01"
+          use_case: "local_cache"
+        - device: "/dev/nvme1n1"
+          size: "2TB"
+          node: "worker-02"
+          use_case: "local_cache"
+      
+      sata_ssds:
+        - device: "/dev/sda"
+          size: "4TB"
+          node: "storage-01"
+          use_case: "bulk_storage"
+        - device: "/dev/sdb"
+          size: "4TB"
+          node: "storage-02"
+          use_case: "bulk_storage"
+    
+    # Local path provisioner
+    local_path_provisioner:
+      version: "v0.0.24"
+      
+      # Storage classes
+      storage_classes:
+        - name: "local-nvme"
+          path: "/mnt/nvme-ssd"
+          volume_binding_mode: "WaitForFirstConsumer"
+          reclaim_policy: "Delete"
+          node_selector:
+            storage-type: "nvme"
+        
+        - name: "local-ssd"
+          path: "/mnt/ssd"
+          volume_binding_mode: "WaitForFirstConsumer"
+          reclaim_policy: "Retain"
+          node_selector:
+            storage-type: "ssd"
+  
+  # Network storage systems
+  network_storage:
+    # NFS storage
+    nfs:
+      servers:
+        # Primary NFS server
+        primary:
+          hostname: "nfs-01.textnlp.local"
+          ip: "10.100.1.50"
+          
+          # Exports
+          exports:
+            - path: "/storage/models"
+              size: "20TB"
+              clients: "10.100.1.0/24(rw,sync,no_subtree_check,no_root_squash)"
+              options: "fsid=1,crossmnt"
+            
+            - path: "/storage/datasets"
+              size: "50TB"
+              clients: "10.100.1.0/24(rw,sync,no_subtree_check,no_root_squash)"
+              options: "fsid=2,crossmnt"
+            
+            - path: "/storage/cache"
+              size: "10TB"
+              clients: "10.100.1.0/24(rw,sync,no_subtree_check,root_squash)"
+              options: "fsid=3"
+        
+        # Secondary NFS server (backup)
+        secondary:
+          hostname: "nfs-02.textnlp.local"
+          ip: "10.100.1.51"
+          
+          # Backup exports
+          exports:
+            - path: "/backup/models"
+              size: "20TB"
+              clients: "10.100.1.0/24(ro,sync,no_subtree_check,root_squash)"
+            
+            - path: "/backup/datasets"
+              size: "50TB"
+              clients: "10.100.1.0/24(ro,sync,no_subtree_check,root_squash)"
+      
+      # NFS CSI driver
+      nfs_csi_driver:
+        version: "v4.5.0"
+        
+        # Storage classes
+        storage_classes:
+          - name: "nfs-models"
+            server: "nfs-01.textnlp.local"
+            share: "/storage/models"
+            mount_options: ["nfsvers=4.1", "proto=tcp", "fsc"]
+            reclaim_policy: "Retain"
+          
+          - name: "nfs-datasets"
+            server: "nfs-01.textnlp.local"
+            share: "/storage/datasets"
+            mount_options: ["nfsvers=4.1", "proto=tcp", "fsc"]
+            reclaim_policy: "Retain"
+          
+          - name: "nfs-cache"
+            server: "nfs-01.textnlp.local"
+            share: "/storage/cache"
+            mount_options: ["nfsvers=4.1", "proto=tcp"]
+            reclaim_policy: "Delete"
+    
+    # Ceph distributed storage
+    ceph:
+      cluster:
+        name: "textnlp-ceph"
+        
+        # Monitor daemons
+        monitors:
+          - name: "mon.ceph-01"
+            host: "ceph-01.textnlp.local"
+            ip: "10.100.1.61"
+          - name: "mon.ceph-02"
+            host: "ceph-02.textnlp.local"
+            ip: "10.100.1.62"
+          - name: "mon.ceph-03"
+            host: "ceph-03.textnlp.local"
+            ip: "10.100.1.63"
+        
+        # OSD daemons
+        osds:
+          - host: "ceph-01.textnlp.local"
+            devices: ["/dev/sdc", "/dev/sdd", "/dev/sde", "/dev/sdf"]
+          - host: "ceph-02.textnlp.local"
+            devices: ["/dev/sdc", "/dev/sdd", "/dev/sde", "/dev/sdf"]
+          - host: "ceph-03.textnlp.local"
+            devices: ["/dev/sdc", "/dev/sdd", "/dev/sde", "/dev/sdf"]
+        
+        # Manager daemons
+        managers:
+          - name: "mgr.ceph-01"
+            host: "ceph-01.textnlp.local"
+          - name: "mgr.ceph-02"
+            host: "ceph-02.textnlp.local"
+      
+      # Storage pools
+      pools:
+        - name: "models-pool"
+          type: "replicated"
+          size: 3
+          min_size: 2
+          pg_num: 128
+          pgp_num: 128
+          application: "rbd"
+        
+        - name: "datasets-pool"
+          type: "erasure"
+          k: 4
+          m: 2
+          pg_num: 64
+          pgp_num: 64
+          application: "rbd"
+        
+        - name: "cache-pool"
+          type: "replicated"
+          size: 2
+          min_size: 1
+          pg_num: 32
+          pgp_num: 32
+          application: "rbd"
+      
+      # RBD images
+      rbd_images:
+        - name: "models-rbd"
+          pool: "models-pool"
+          size: "10Ti"
+          features: ["layering", "exclusive-lock", "object-map", "fast-diff"]
+        
+        - name: "datasets-rbd"
+          pool: "datasets-pool"
+          size: "50Ti"
+          features: ["layering", "exclusive-lock"]
+      
+      # Rook operator
+      rook_operator:
+        version: "v1.12.7"
+        namespace: "rook-ceph"
+        
+        # CSI drivers
+        csi_drivers:
+          rbd:
+            enabled: true
+            provisioner_replicas: 2
+            
+            # Storage classes
+            storage_classes:
+              - name: "ceph-rbd-ssd"
+                pool: "models-pool"
+                image_format: "2"
+                image_features: "layering"
+                reclaim_policy: "Delete"
+                allow_volume_expansion: true
+              
+              - name: "ceph-rbd-hdd"
+                pool: "datasets-pool"
+                image_format: "2"
+                image_features: "layering"
+                reclaim_policy: "Retain"
+                allow_volume_expansion: true
+          
+          cephfs:
+            enabled: true
+            provisioner_replicas: 2
+            
+            # File systems
+            file_systems:
+              - name: "textnlp-fs"
+                metadata_pool:
+                  replicated:
+                    size: 3
+                data_pools:
+                  - name: "textnlp-data0"
+                    replicated:
+                      size: 3
+            
+            # Storage classes
+            storage_classes:
+              - name: "cephfs"
+                fs_name: "textnlp-fs"
+                pool: "textnlp-data0"
+                reclaim_policy: "Delete"
+                allow_volume_expansion: true
+
+# Model Storage Optimization
+model_storage_optimization:
+  # Model versioning strategy
+  versioning:
+    strategy: "semantic_versioning"  # major.minor.patch
+    
+    # Version retention
+    retention_policy:
+      production_models: "keep_all"
+      development_models: "keep_latest_10"
+      experimental_models: "keep_latest_3"
+    
+    # Model metadata
+    metadata_storage:
+      format: "json"
+      fields:
+        - "model_name"
+        - "version"
+        - "creation_date"
+        - "size_mb"
+        - "accuracy_metrics"
+        - "training_dataset"
+        - "framework"
+        - "dependencies"
+  
+  # Model compression and formats
+  compression:
+    # Compression algorithms by model type
+    algorithms:
+      text_models: "gzip"
+      large_models: "lz4"
+      checkpoint_files: "zstd"
+    
+    # Compression levels
+    levels:
+      development: "fast"  # Low compression, fast access
+      staging: "balanced"  # Medium compression
+      production: "max"    # Maximum compression
+  
+  # Model sharding for large models
+  sharding:
+    enabled: true
+    
+    # Sharding strategy
+    strategies:
+      - name: "size_based"
+        threshold: "10GB"
+        shard_size: "1GB"
+      
+      - name: "layer_based"
+        model_types: ["transformer", "gpt"]
+        shards_per_layer: 1
+    
+    # Shard distribution
+    distribution:
+      strategy: "round_robin"
+      replicas_per_shard: 2
+      
+      # Preferred nodes for shards
+      node_affinity:
+        ssd_nodes: "high_priority_models"
+        standard_nodes: "standard_models"
+  
+  # Caching strategy
+  caching:
+    # Multi-tier caching
+    tiers:
+      l1_cache:
+        type: "memory"
+        size: "32GB"
+        location: "local_node"
+        ttl: "1hour"
+        
+      l2_cache:
+        type: "nvme_ssd"
+        size: "500GB"
+        location: "local_node"
+        ttl: "24hours"
+        
+      l3_cache:
+        type: "network_ssd"
+        size: "5TB"
+        location: "cluster_wide"
+        ttl: "7days"
+    
+    # Cache warming strategies
+    warming:
+      preload_popular_models: true
+      preload_on_deployment: true
+      background_refresh: true
+      
+      # Model popularity tracking
+      popularity_metrics:
+        - "request_frequency"
+        - "user_ratings"
+        - "business_priority"
+    
+    # Cache invalidation
+    invalidation:
+      strategies:
+        - "time_based"  # TTL
+        - "version_based"  # New model version
+        - "usage_based"  # LRU
+      
+      # Invalidation triggers
+      triggers:
+        - "model_update"
+        - "cache_full"
+        - "manual_request"
+
+# Dataset Storage Optimization
+dataset_storage_optimization:
+  # Dataset organization
+  organization:
+    # Directory structure
+    structure:
+      by_project: "/datasets/{project_name}/{dataset_type}/{version}"
+      by_type: "/datasets/{dataset_type}/{project_name}/{version}"
+      by_date: "/datasets/{year}/{month}/{day}/{dataset_name}"
+    
+    # Naming conventions
+    naming:
+      pattern: "{dataset_name}_v{version}_{date}_{format}"
+      examples:
+        - "training_data_v1.0_20241201_json"
+        - "validation_set_v2.1_20241201_parquet"
+        - "test_corpus_v1.5_20241201_txt"
+  
+  # Data formats and compression
+  formats:
+    # Raw text data
+    text_data:
+      formats: ["txt", "json", "jsonl", "csv"]
+      compression: "gzip"
+      encoding: "utf-8"
+      
+    # Structured data
+    structured_data:
+      formats: ["parquet", "orc", "avro"]
+      compression: "snappy"
+      partitioning: "by_date"
+      
+    # Binary data
+    binary_data:
+      formats: ["pickle", "msgpack", "protobuf"]
+      compression: "lz4"
+      checksums: "md5"
+  
+  # Data preprocessing optimization
+  preprocessing:
+    # Tokenization caching
+    tokenization:
+      cache_enabled: true
+      cache_location: "fast_ssd"
+      cache_size: "100GB"
+      
+      # Tokenizer-specific caching
+      tokenizers:
+        - name: "bert_tokenizer"
+          cache_key: "bert_{vocab_size}_{model_name}"
+        - name: "gpt_tokenizer"
+          cache_key: "gpt_{vocab_size}_{model_name}"
+    
+    # Feature extraction caching
+    features:
+      cache_enabled: true
+      cache_format: "numpy"
+      compression: "npz"
+      
+      # Feature types
+      types:
+        - "embeddings"
+        - "attention_weights"
+        - "hidden_states"
+        - "gradients"
+  
+  # Dataset versioning and lineage
+  versioning:
+    strategy: "data_versioning"
+    
+    # Version tracking
+    tracking:
+      content_hash: "sha256"
+      schema_version: "semantic"
+      lineage_graph: true
+      
+      # Metadata tracking
+      metadata:
+        - "source_datasets"
+        - "transformations_applied"
+        - "quality_metrics"
+        - "usage_statistics"
+    
+    # Incremental updates
+    incremental_updates:
+      enabled: true
+      
+      # Delta storage
+      delta_storage:
+        format: "parquet"
+        compression: "snappy"
+        partition_strategy: "date"
+
+# Backup and Recovery Strategy
+backup_recovery:
+  # Backup tiers
+  backup_tiers:
+    # Hot backup (immediate recovery)
+    hot_backup:
+      frequency: "continuous"
+      storage_type: "ssd"
+      retention: "7days"
+      rpo: "15minutes"  # Recovery Point Objective
+      rto: "30minutes"  # Recovery Time Objective
+      
+    # Warm backup (fast recovery)
+    warm_backup:
+      frequency: "daily"
+      storage_type: "standard"
+      retention: "30days"
+      rpo: "24hours"
+      rto: "4hours"
+      
+    # Cold backup (archival)
+    cold_backup:
+      frequency: "weekly"
+      storage_type: "archive"
+      retention: "7years"
+      rpo: "7days"
+      rto: "48hours"
+  
+  # Cross-platform backup strategy
+  cross_platform:
+    # AWS to GCP backup
+    aws_to_gcp:
+      enabled: true
+      sync_frequency: "daily"
+      bandwidth_limit: "1Gbps"
+      
+    # GCP to Azure backup
+    gcp_to_azure:
+      enabled: true
+      sync_frequency: "weekly"
+      bandwidth_limit: "500Mbps"
+      
+    # On-premises to cloud backup
+    onprem_to_cloud:
+      primary_target: "aws_s3"
+      secondary_target: "gcp_storage"
+      sync_frequency: "daily"
+      encryption: "aes256"
+  
+  # Disaster recovery procedures
+  disaster_recovery:
+    # Automated recovery
+    automated:
+      triggers:
+        - "storage_failure"
+        - "data_corruption"
+        - "site_unavailability"
+      
+      procedures:
+        - "failover_to_secondary_site"
+        - "restore_from_latest_backup"
+        - "verify_data_integrity"
+        - "resume_operations"
+    
+    # Manual recovery
+    manual:
+      runbooks:
+        - "docs/runbooks/storage-disaster-recovery.md"
+        - "docs/runbooks/data-restoration.md"
+        - "docs/runbooks/cross-platform-failover.md"
+
+# Performance Monitoring
+performance_monitoring:
+  # Storage metrics
+  metrics:
+    # Throughput metrics
+    throughput:
+      - "read_iops"
+      - "write_iops"
+      - "read_bandwidth_mbps"
+      - "write_bandwidth_mbps"
+      
+    # Latency metrics
+    latency:
+      - "read_latency_ms"
+      - "write_latency_ms"
+      - "seek_time_ms"
+      
+    # Utilization metrics
+    utilization:
+      - "storage_utilization_percent"
+      - "queue_depth"
+      - "concurrent_operations"
+      
+    # Reliability metrics
+    reliability:
+      - "error_rate"
+      - "retry_count"
+      - "timeout_count"
+  
+  # Alerting thresholds
+  alerts:
+    # Performance alerts
+    performance:
+      - metric: "read_latency_ms"
+        threshold: 100
+        duration: "5m"
+        severity: "warning"
+      
+      - metric: "storage_utilization_percent"
+        threshold: 85
+        duration: "10m"
+        severity: "critical"
+      
+      - metric: "error_rate"
+        threshold: 1
+        duration: "1m"
+        severity: "critical"
+    
+    # Capacity alerts
+    capacity:
+      - metric: "free_space_percent"
+        threshold: 20
+        duration: "1h"
+        severity: "warning"
+      
+      - metric: "free_space_percent"
+        threshold: 10
+        duration: "30m"
+        severity: "critical"
+  
+  # Performance optimization
+  optimization:
+    # Automatic tuning
+    auto_tuning:
+      enabled: true
+      
+      # Tuning parameters
+      parameters:
+        - "read_ahead_size"
+        - "write_cache_size"
+        - "queue_depth"
+        - "block_size"
+    
+    # Workload-specific optimization
+    workload_optimization:
+      ml_training:
+        - "large_sequential_reads"
+        - "high_bandwidth"
+        - "minimal_latency_optimization"
+      
+      model_serving:
+        - "random_access_patterns"
+        - "low_latency"
+        - "high_concurrency"
+      
+      batch_processing:
+        - "large_block_sizes"
+        - "high_throughput"
+        - "cost_optimization"

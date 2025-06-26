@@ -1,0 +1,997 @@
+# On-Premises Database Setup for TextNLP Platform
+# Phase 3: Core Infrastructure Deployment
+
+apiVersion: v1
+kind: DatabaseSetup
+metadata:
+  name: textnlp-onprem-database
+  version: "1.0"
+  environment: production
+  platform: onpremises
+
+# Patroni Configuration for PostgreSQL High Availability
+patroni_config:
+  # Global Patroni settings
+  global:
+    scope: "textnlp-postgres"
+    namespace: "/textnlp/"
+    
+    # Etcd configuration for DCS (Distributed Configuration Store)
+    etcd:
+      hosts: 
+        - "10.100.1.11:2379"
+        - "10.100.1.12:2379"
+        - "10.100.1.13:2379"
+      protocol: "https"
+      
+      # TLS configuration
+      cert_file: "/etc/patroni/certs/client.crt"
+      key_file: "/etc/patroni/certs/client.key"
+      ca_file: "/etc/patroni/certs/ca.crt"
+    
+    # Bootstrap configuration
+    bootstrap:
+      # Database initialization
+      dcs:
+        ttl: 30
+        loop_wait: 10
+        retry_timeout: 30
+        maximum_lag_on_failover: 1048576  # 1MB
+        master_start_timeout: 300
+        synchronous_mode: false
+        synchronous_mode_strict: false
+        
+        # PostgreSQL configuration
+        postgresql:
+          use_pg_rewind: true
+          use_slots: true
+          
+          # Connection parameters
+          parameters:
+            # Connection settings
+            listen_addresses: "*"
+            port: 5432
+            max_connections: 1000
+            
+            # Memory settings
+            shared_buffers: "16GB"
+            effective_cache_size: "48GB"
+            work_mem: "32MB"
+            maintenance_work_mem: "2GB"
+            
+            # WAL settings
+            wal_level: "replica"
+            max_wal_size: "2GB"
+            min_wal_size: "80MB"
+            wal_buffers: "16MB"
+            wal_keep_segments: 32
+            
+            # Replication settings
+            max_wal_senders: 10
+            max_replication_slots: 10
+            hot_standby: "on"
+            hot_standby_feedback: "on"
+            
+            # Checkpoint settings
+            checkpoint_completion_target: 0.9
+            checkpoint_timeout: "5min"
+            
+            # Performance settings
+            default_statistics_target: 100
+            random_page_cost: 1.1
+            effective_io_concurrency: 200
+            
+            # Logging settings
+            log_destination: "csvlog"
+            logging_collector: "on"
+            log_directory: "/var/log/postgresql"
+            log_filename: "postgresql-%Y-%m-%d_%H%M%S.log"
+            log_min_duration_statement: 1000
+            log_checkpoints: "on"
+            log_connections: "on"
+            log_disconnections: "on"
+            log_lock_waits: "on"
+            log_statement: "ddl"
+            
+            # Vacuum settings
+            autovacuum: "on"
+            autovacuum_max_workers: 6
+            autovacuum_vacuum_scale_factor: 0.1
+            autovacuum_analyze_scale_factor: 0.05
+            
+            # Extensions
+            shared_preload_libraries: "pg_stat_statements,pg_hint_plan,auto_explain"
+      
+      # Initial database setup
+      initdb:
+        - encoding: UTF8
+        - data-checksums
+        - locale: en_US.UTF-8
+      
+      # Create initial users and databases
+      users:
+        textnlp_admin:
+          password: "%ADMIN_PASSWORD%"
+          options:
+            - createdb
+            - createrole
+            - superuser
+        
+        textnlp_app:
+          password: "%APP_PASSWORD%"
+          options:
+            - createdb
+        
+        textnlp_readonly:
+          password: "%READONLY_PASSWORD%"
+          options: []
+        
+        replicator:
+          password: "%REPLICATOR_PASSWORD%"
+          options:
+            - replication
+      
+      # Create databases
+      databases:
+        model_registry:
+          owner: textnlp_app
+          encoding: UTF8
+          locale: en_US.UTF-8
+        
+        inference_logs:
+          owner: textnlp_app
+          encoding: UTF8
+          locale: en_US.UTF-8
+        
+        user_management:
+          owner: textnlp_app
+          encoding: UTF8
+          locale: en_US.UTF-8
+        
+        analytics:
+          owner: textnlp_app
+          encoding: UTF8
+          locale: en_US.UTF-8
+        
+        configuration:
+          owner: textnlp_app
+          encoding: UTF8
+          locale: en_US.UTF-8
+
+  # Node-specific configurations
+  nodes:
+    # Master node
+    postgres-master-01:
+      hostname: "postgres-master-01"
+      ip: "10.100.1.71"
+      role: "master"
+      
+      # Patroni REST API
+      restapi:
+        listen: "10.100.1.71:8008"
+        connect_address: "10.100.1.71:8008"
+        authentication:
+          username: "patroni"
+          password: "%PATRONI_API_PASSWORD%"
+      
+      # PostgreSQL configuration
+      postgresql:
+        listen: "10.100.1.71:5432"
+        connect_address: "10.100.1.71:5432"
+        data_dir: "/var/lib/postgresql/15/main"
+        bin_dir: "/usr/lib/postgresql/15/bin"
+        config_dir: "/etc/postgresql/15/main"
+        pgpass: "/tmp/pgpass"
+        
+        # Authentication
+        authentication:
+          replication:
+            username: "replicator"
+            password: "%REPLICATOR_PASSWORD%"
+          superuser:
+            username: "textnlp_admin"
+            password: "%ADMIN_PASSWORD%"
+          rewind:
+            username: "replicator"
+            password: "%REPLICATOR_PASSWORD%"
+        
+        # Custom configuration
+        parameters:
+          unix_socket_directories: "/var/run/postgresql"
+      
+      # Watchdog configuration
+      watchdog:
+        mode: "required"
+        device: "/dev/watchdog"
+        safety_margin: 5
+    
+    # Standby node 1
+    postgres-standby-01:
+      hostname: "postgres-standby-01"
+      ip: "10.100.1.72"
+      role: "replica"
+      
+      # Patroni REST API
+      restapi:
+        listen: "10.100.1.72:8008"
+        connect_address: "10.100.1.72:8008"
+        authentication:
+          username: "patroni"
+          password: "%PATRONI_API_PASSWORD%"
+      
+      # PostgreSQL configuration
+      postgresql:
+        listen: "10.100.1.72:5432"
+        connect_address: "10.100.1.72:5432"
+        data_dir: "/var/lib/postgresql/15/main"
+        bin_dir: "/usr/lib/postgresql/15/bin"
+        config_dir: "/etc/postgresql/15/main"
+        pgpass: "/tmp/pgpass"
+        
+        # Authentication
+        authentication:
+          replication:
+            username: "replicator"
+            password: "%REPLICATOR_PASSWORD%"
+          superuser:
+            username: "textnlp_admin"
+            password: "%ADMIN_PASSWORD%"
+          rewind:
+            username: "replicator"
+            password: "%REPLICATOR_PASSWORD%"
+      
+      # Watchdog configuration
+      watchdog:
+        mode: "required"
+        device: "/dev/watchdog"
+        safety_margin: 5
+    
+    # Standby node 2
+    postgres-standby-02:
+      hostname: "postgres-standby-02"
+      ip: "10.100.1.73"
+      role: "replica"
+      
+      # Patroni REST API
+      restapi:
+        listen: "10.100.1.73:8008"
+        connect_address: "10.100.1.73:8008"
+        authentication:
+          username: "patroni"
+          password: "%PATRONI_API_PASSWORD%"
+      
+      # PostgreSQL configuration
+      postgresql:
+        listen: "10.100.1.73:5432"
+        connect_address: "10.100.1.73:5432"
+        data_dir: "/var/lib/postgresql/15/main"
+        bin_dir: "/usr/lib/postgresql/15/bin"
+        config_dir: "/etc/postgresql/15/main"
+        pgpass: "/tmp/pgpass"
+        
+        # Authentication
+        authentication:
+          replication:
+            username: "replicator"
+            password: "%REPLICATOR_PASSWORD%"
+          superuser:
+            username: "textnlp_admin"
+            password: "%ADMIN_PASSWORD%"
+          rewind:
+            username: "replicator"
+            password: "%REPLICATOR_PASSWORD%"
+      
+      # Watchdog configuration
+      watchdog:
+        mode: "required"
+        device: "/dev/watchdog"
+        safety_margin: 5
+
+# HAProxy Configuration for Load Balancing
+haproxy_config:
+  global:
+    maxconn: 4096
+    log: "127.0.0.1:514 local0"
+    chroot: "/var/lib/haproxy"
+    stats_socket: "/run/haproxy/admin.sock mode 660 level admin"
+    stats_timeout: "30s"
+    user: "haproxy"
+    group: "haproxy"
+    daemon: true
+    
+    # SSL configuration
+    ssl_default_bind_ciphers: "ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:RSA+AESGCM:RSA+AES:!aNULL:!MD5:!DSS"
+    ssl_default_bind_options: "ssl-min-ver TLSv1.2 no-tls-tickets"
+  
+  defaults:
+    mode: "tcp"
+    log: "global"
+    option: "tcplog"
+    timeout_connect: "5000ms"
+    timeout_client: "50000ms"
+    timeout_server: "50000ms"
+    timeout_check: "5000ms"
+    retries: 3
+  
+  # Statistics interface
+  stats:
+    enabled: true
+    uri: "/haproxy-stats"
+    bind: "10.100.1.70:8080"
+    admin: true
+    refresh: "30s"
+    auth:
+      username: "admin"
+      password: "%HAPROXY_STATS_PASSWORD%"
+  
+  # Frontend for PostgreSQL write operations
+  frontend_postgres_write:
+    name: "postgres_write"
+    bind: "10.100.1.70:5432"
+    default_backend: "postgres_write_backend"
+    
+    # Connection limits
+    maxconn: 1000
+    
+    # TCP keep-alive
+    option: "tcpka"
+  
+  # Backend for PostgreSQL write operations (master only)
+  backend_postgres_write:
+    name: "postgres_write_backend"
+    balance: "first"  # Always route to first available (master)
+    option: "tcp-check"
+    
+    # Health check
+    tcp_check_expect: "string master"
+    
+    # Servers
+    servers:
+      - name: "postgres-master"
+        address: "10.100.1.71:5432"
+        check: "check port 8008 httpchk GET /master"
+        weight: 100
+        
+      - name: "postgres-standby-01"
+        address: "10.100.1.72:5432"
+        check: "check port 8008 httpchk GET /master backup"
+        weight: 90
+        
+      - name: "postgres-standby-02"
+        address: "10.100.1.73:5432"
+        check: "check port 8008 httpchk GET /master backup"
+        weight: 90
+  
+  # Frontend for PostgreSQL read operations
+  frontend_postgres_read:
+    name: "postgres_read"
+    bind: "10.100.1.70:5433"
+    default_backend: "postgres_read_backend"
+    
+    # Connection limits
+    maxconn: 2000
+    
+    # TCP keep-alive
+    option: "tcpka"
+  
+  # Backend for PostgreSQL read operations (replicas)
+  backend_postgres_read:
+    name: "postgres_read_backend"
+    balance: "roundrobin"
+    option: "tcp-check"
+    
+    # Health check
+    tcp_check_expect: "string replica"
+    
+    # Servers
+    servers:
+      - name: "postgres-standby-01"
+        address: "10.100.1.72:5432"
+        check: "check port 8008 httpchk GET /replica"
+        weight: 100
+        
+      - name: "postgres-standby-02"
+        address: "10.100.1.73:5432"
+        check: "check port 8008 httpchk GET /replica"
+        weight: 100
+        
+      - name: "postgres-master"
+        address: "10.100.1.71:5432"
+        check: "check port 8008 httpchk GET /replica backup"
+        weight: 50
+
+# PgBouncer Configuration for Connection Pooling
+pgbouncer_config:
+  # Global configuration
+  global:
+    # Database connections
+    databases:
+      model_registry:
+        host: "10.100.1.70"
+        port: 5432
+        dbname: "model_registry"
+        pool_size: 20
+        
+      inference_logs:
+        host: "10.100.1.70"
+        port: 5432
+        dbname: "inference_logs"
+        pool_size: 30
+        
+      user_management:
+        host: "10.100.1.70"
+        port: 5432
+        dbname: "user_management"
+        pool_size: 10
+        
+      analytics:
+        host: "10.100.1.70"
+        port: 5432
+        dbname: "analytics"
+        pool_size: 15
+        
+      configuration:
+        host: "10.100.1.70"
+        port: 5432
+        dbname: "configuration"
+        pool_size: 5
+      
+      # Read-only databases (connecting to read port)
+      model_registry_ro:
+        host: "10.100.1.70"
+        port: 5433
+        dbname: "model_registry"
+        pool_size: 15
+        
+      analytics_ro:
+        host: "10.100.1.70"
+        port: 5433
+        dbname: "analytics"
+        pool_size: 20
+    
+    # Pool configuration
+    pool_mode: "transaction"
+    max_client_conn: 1000
+    default_pool_size: 25
+    min_pool_size: 10
+    reserve_pool_size: 5
+    reserve_pool_timeout: 5
+    max_db_connections: 100
+    max_user_connections: 100
+    
+    # Connection settings
+    server_reset_query: "DISCARD ALL"
+    server_check_query: "SELECT 1"
+    server_check_delay: 30
+    server_connect_timeout: 15
+    server_login_retry: 15
+    client_login_timeout: 60
+    autodb_idle_timeout: 3600
+    server_idle_timeout: 600
+    
+    # Authentication
+    auth_type: "md5"
+    auth_file: "/etc/pgbouncer/userlist.txt"
+    auth_hba_file: "/etc/pgbouncer/pg_hba.conf"
+    
+    # Logging
+    log_connections: 1
+    log_disconnections: 1
+    log_pooler_errors: 1
+    syslog: 1
+    syslog_facility: "daemon"
+    syslog_ident: "pgbouncer"
+    
+    # Admin interface
+    admin_users: "textnlp_admin"
+    stats_users: "textnlp_admin,stats_user"
+    
+    # Listen configuration
+    listen_addr: "*"
+    listen_port: 6432
+    unix_socket_dir: "/var/run/postgresql"
+    unix_socket_mode: "0777"
+    unix_socket_group: "postgres"
+  
+  # Node-specific configurations
+  nodes:
+    pgbouncer-01:
+      hostname: "pgbouncer-01"
+      ip: "10.100.1.74"
+      port: 6432
+      
+      # Process configuration
+      pidfile: "/var/run/pgbouncer/pgbouncer.pid"
+      logfile: "/var/log/pgbouncer/pgbouncer.log"
+      
+      # Resource limits
+      max_client_conn: 1000
+      
+    pgbouncer-02:
+      hostname: "pgbouncer-02"
+      ip: "10.100.1.75"
+      port: 6432
+      
+      # Process configuration
+      pidfile: "/var/run/pgbouncer/pgbouncer.pid"
+      logfile: "/var/log/pgbouncer/pgbouncer.log"
+      
+      # Resource limits
+      max_client_conn: 1000
+
+# Database Schema Initialization
+schema_initialization:
+  # SQL files to execute during initialization
+  init_scripts:
+    # Create extensions
+    extensions:
+      file: "01_extensions.sql"
+      content: |
+        -- Enable required extensions
+        CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+        CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+        CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+        CREATE EXTENSION IF NOT EXISTS "btree_gin";
+        CREATE EXTENSION IF NOT EXISTS "btree_gist";
+        CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+        
+        -- Update pg_stat_statements configuration
+        SELECT pg_stat_statements_reset();
+    
+    # Create schemas
+    schemas:
+      file: "02_schemas.sql"
+      content: |
+        -- Create application schemas
+        CREATE SCHEMA IF NOT EXISTS model_registry;
+        CREATE SCHEMA IF NOT EXISTS inference_logs;
+        CREATE SCHEMA IF NOT EXISTS user_management;
+        CREATE SCHEMA IF NOT EXISTS analytics;
+        CREATE SCHEMA IF NOT EXISTS configuration;
+        
+        -- Set search path
+        ALTER DATABASE model_registry SET search_path TO model_registry, public;
+        ALTER DATABASE inference_logs SET search_path TO inference_logs, public;
+        ALTER DATABASE user_management SET search_path TO user_management, public;
+        ALTER DATABASE analytics SET search_path TO analytics, public;
+        ALTER DATABASE configuration SET search_path TO configuration, public;
+    
+    # Create tables
+    tables:
+      file: "03_tables.sql"
+      content: |
+        -- Model Registry Tables
+        \c model_registry
+        
+        CREATE TABLE IF NOT EXISTS models (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name VARCHAR(255) NOT NULL,
+          version VARCHAR(50) NOT NULL,
+          description TEXT,
+          model_type VARCHAR(100) NOT NULL,
+          framework VARCHAR(50) NOT NULL,
+          file_path TEXT NOT NULL,
+          file_size_bytes BIGINT,
+          checksum VARCHAR(64),
+          parameters JSONB,
+          metrics JSONB,
+          tags JSONB,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          created_by UUID NOT NULL,
+          UNIQUE(name, version)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_models_name_version ON models(name, version);
+        CREATE INDEX IF NOT EXISTS idx_models_type ON models(model_type);
+        CREATE INDEX IF NOT EXISTS idx_models_framework ON models(framework);
+        CREATE INDEX IF NOT EXISTS idx_models_created_at ON models(created_at);
+        CREATE INDEX IF NOT EXISTS idx_models_tags ON models USING GIN(tags);
+        
+        -- Inference Logs Tables
+        \c inference_logs
+        
+        CREATE TABLE IF NOT EXISTS inference_requests (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          request_id VARCHAR(255) NOT NULL UNIQUE,
+          model_id UUID NOT NULL,
+          user_id UUID,
+          input_text TEXT,
+          output_text TEXT,
+          input_tokens INTEGER,
+          output_tokens INTEGER,
+          latency_ms INTEGER,
+          status VARCHAR(20) NOT NULL,
+          error_message TEXT,
+          parameters JSONB,
+          metadata JSONB,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_inference_model_id ON inference_requests(model_id);
+        CREATE INDEX IF NOT EXISTS idx_inference_user_id ON inference_requests(user_id);
+        CREATE INDEX IF NOT EXISTS idx_inference_status ON inference_requests(status);
+        CREATE INDEX IF NOT EXISTS idx_inference_created_at ON inference_requests(created_at);
+        CREATE INDEX IF NOT EXISTS idx_inference_latency ON inference_requests(latency_ms);
+        
+        -- Partition by month
+        SELECT create_range_partitions('inference_requests', 'created_at', 
+          CURRENT_DATE - INTERVAL '1 year', CURRENT_DATE + INTERVAL '1 year', INTERVAL '1 month');
+    
+    # Create roles and permissions
+    roles:
+      file: "04_roles.sql"
+      content: |
+        -- Create application roles
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'textnlp_app_read_write') THEN
+            CREATE ROLE textnlp_app_read_write;
+          END IF;
+          
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'textnlp_app_read_only') THEN
+            CREATE ROLE textnlp_app_read_only;
+          END IF;
+        END
+        $$;
+        
+        -- Grant permissions
+        GRANT CONNECT ON DATABASE model_registry TO textnlp_app_read_write, textnlp_app_read_only;
+        GRANT CONNECT ON DATABASE inference_logs TO textnlp_app_read_write, textnlp_app_read_only;
+        GRANT CONNECT ON DATABASE user_management TO textnlp_app_read_write, textnlp_app_read_only;
+        GRANT CONNECT ON DATABASE analytics TO textnlp_app_read_write, textnlp_app_read_only;
+        GRANT CONNECT ON DATABASE configuration TO textnlp_app_read_write, textnlp_app_read_only;
+        
+        -- Grant schema permissions
+        GRANT USAGE ON SCHEMA model_registry TO textnlp_app_read_write, textnlp_app_read_only;
+        GRANT USAGE ON SCHEMA inference_logs TO textnlp_app_read_write, textnlp_app_read_only;
+        GRANT USAGE ON SCHEMA user_management TO textnlp_app_read_write, textnlp_app_read_only;
+        GRANT USAGE ON SCHEMA analytics TO textnlp_app_read_write, textnlp_app_read_only;
+        GRANT USAGE ON SCHEMA configuration TO textnlp_app_read_write, textnlp_app_read_only;
+        
+        -- Grant table permissions
+        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA model_registry TO textnlp_app_read_write;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA inference_logs TO textnlp_app_read_write;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA user_management TO textnlp_app_read_write;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA analytics TO textnlp_app_read_write;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA configuration TO textnlp_app_read_write;
+        
+        GRANT SELECT ON ALL TABLES IN SCHEMA model_registry TO textnlp_app_read_only;
+        GRANT SELECT ON ALL TABLES IN SCHEMA inference_logs TO textnlp_app_read_only;
+        GRANT SELECT ON ALL TABLES IN SCHEMA user_management TO textnlp_app_read_only;
+        GRANT SELECT ON ALL TABLES IN SCHEMA analytics TO textnlp_app_read_only;
+        GRANT SELECT ON ALL TABLES IN SCHEMA configuration TO textnlp_app_read_only;
+        
+        -- Grant sequence permissions
+        GRANT USAGE ON ALL SEQUENCES IN SCHEMA model_registry TO textnlp_app_read_write;
+        GRANT USAGE ON ALL SEQUENCES IN SCHEMA inference_logs TO textnlp_app_read_write;
+        GRANT USAGE ON ALL SEQUENCES IN SCHEMA user_management TO textnlp_app_read_write;
+        GRANT USAGE ON ALL SEQUENCES IN SCHEMA analytics TO textnlp_app_read_write;
+        GRANT USAGE ON ALL SEQUENCES IN SCHEMA configuration TO textnlp_app_read_write;
+        
+        -- Grant role to users
+        GRANT textnlp_app_read_write TO textnlp_app;
+        GRANT textnlp_app_read_only TO textnlp_readonly;
+
+# Monitoring Configuration
+monitoring:
+  # PostgreSQL monitoring
+  postgresql_monitoring:
+    # pg_stat_statements configuration
+    pg_stat_statements:
+      enabled: true
+      max_statements: 10000
+      track: "all"
+      save: true
+    
+    # Log monitoring
+    log_monitoring:
+      enabled: true
+      log_level: "info"
+      log_line_prefix: "%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h "
+      log_statement: "ddl"
+      log_min_duration_statement: 1000
+    
+    # Metrics collection
+    metrics:
+      - "pg_stat_database"
+      - "pg_stat_user_tables"
+      - "pg_stat_user_indexes"
+      - "pg_stat_replication"
+      - "pg_stat_activity"
+      - "pg_locks"
+      - "pg_stat_statements"
+  
+  # System monitoring
+  system_monitoring:
+    tools:
+      - "node_exporter"
+      - "postgres_exporter"
+      - "patroni_exporter"
+      - "haproxy_exporter"
+      - "pgbouncer_exporter"
+    
+    metrics:
+      - "cpu_usage"
+      - "memory_usage"
+      - "disk_usage"
+      - "network_io"
+      - "disk_io"
+      - "load_average"
+  
+  # Alerting rules
+  alerts:
+    - name: "postgresql_down"
+      condition: "pg_up == 0"
+      duration: "30s"
+      severity: "critical"
+    
+    - name: "postgresql_high_connections"
+      condition: "pg_stat_database_numbackends / pg_settings_max_connections > 0.8"
+      duration: "5m"
+      severity: "warning"
+    
+    - name: "postgresql_replication_lag"
+      condition: "pg_replication_lag > 60"
+      duration: "2m"
+      severity: "warning"
+    
+    - name: "postgresql_slow_queries"
+      condition: "pg_slow_queries > 10"
+      duration: "5m"
+      severity: "warning"
+
+# Backup Configuration
+backup_configuration:
+  # Physical backups with pg_basebackup
+  physical_backup:
+    enabled: true
+    tool: "pg_basebackup"
+    
+    # Backup schedule
+    schedule:
+      full_backup: "0 2 * * 0"    # Weekly on Sunday at 2 AM
+      incremental_backup: "0 2 * * 1-6"  # Daily except Sunday at 2 AM
+    
+    # Backup retention
+    retention:
+      full_backups: 4      # Keep 4 weeks
+      incremental_backups: 14  # Keep 2 weeks
+    
+    # Backup configuration
+    options:
+      - "--format=tar"
+      - "--gzip"
+      - "--compress=9"
+      - "--progress"
+      - "--verbose"
+      - "--checkpoint=fast"
+      - "--wal-method=stream"
+    
+    # Backup destination
+    destination: "/backup/postgresql/physical"
+  
+  # Logical backups with pg_dump
+  logical_backup:
+    enabled: true
+    tool: "pg_dump"
+    
+    # Backup schedule
+    schedule:
+      full_backup: "0 3 * * *"  # Daily at 3 AM
+    
+    # Backup retention
+    retention:
+      days: 30
+    
+    # Databases to backup
+    databases:
+      - "model_registry"
+      - "inference_logs"
+      - "user_management"
+      - "analytics"
+      - "configuration"
+    
+    # Backup options
+    options:
+      - "--format=custom"
+      - "--compress=9"
+      - "--verbose"
+      - "--no-privileges"
+      - "--no-owner"
+    
+    # Backup destination
+    destination: "/backup/postgresql/logical"
+  
+  # Point-in-time recovery (PITR)
+  pitr:
+    enabled: true
+    
+    # WAL archiving
+    wal_archiving:
+      enabled: true
+      archive_command: "test ! -f /backup/postgresql/wal/%f && cp %p /backup/postgresql/wal/%f"
+      archive_timeout: "300s"  # 5 minutes
+    
+    # WAL retention
+    wal_retention:
+      days: 7
+      cleanup_command: "find /backup/postgresql/wal -type f -mtime +7 -delete"
+  
+  # Cross-site backup
+  offsite_backup:
+    enabled: true
+    
+    # Remote backup destinations
+    destinations:
+      - type: "rsync"
+        host: "backup-server.textnlp.local"
+        path: "/remote-backup/postgresql"
+        schedule: "0 4 * * *"  # Daily at 4 AM
+      
+      - type: "s3"
+        bucket: "textnlp-db-backups"
+        path: "onprem-postgresql/"
+        schedule: "0 5 * * *"  # Daily at 5 AM
+        encryption: true
+
+# Security Configuration
+security:
+  # SSL/TLS configuration
+  ssl_configuration:
+    enabled: true
+    
+    # Certificate configuration
+    certificates:
+      server_cert: "/etc/postgresql/ssl/server.crt"
+      server_key: "/etc/postgresql/ssl/server.key"
+      ca_cert: "/etc/postgresql/ssl/ca.crt"
+      crl_file: "/etc/postgresql/ssl/server.crl"
+    
+    # SSL parameters
+    ssl_parameters:
+      ssl: "on"
+      ssl_cert_file: "/etc/postgresql/ssl/server.crt"
+      ssl_key_file: "/etc/postgresql/ssl/server.key"
+      ssl_ca_file: "/etc/postgresql/ssl/ca.crt"
+      ssl_crl_file: "/etc/postgresql/ssl/server.crl"
+      ssl_ciphers: "HIGH:MEDIUM:+3DES:!aNULL"
+      ssl_prefer_server_ciphers: "on"
+      ssl_ecdh_curve: "prime256v1"
+      ssl_min_protocol_version: "TLSv1.2"
+  
+  # Authentication configuration
+  authentication:
+    # pg_hba.conf rules
+    hba_rules:
+      - type: "local"
+        database: "all"
+        user: "all"
+        method: "peer"
+      
+      - type: "host"
+        database: "all"
+        user: "all"
+        address: "127.0.0.1/32"
+        method: "scram-sha-256"
+      
+      - type: "host"
+        database: "all"
+        user: "all"
+        address: "10.100.1.0/24"
+        method: "scram-sha-256"
+      
+      - type: "hostssl"
+        database: "replication"
+        user: "replicator"
+        address: "10.100.1.0/24"
+        method: "scram-sha-256"
+      
+      - type: "host"
+        database: "all"
+        user: "all"
+        address: "0.0.0.0/0"
+        method: "reject"
+  
+  # Encryption at rest
+  encryption_at_rest:
+    enabled: true
+    
+    # File system encryption
+    filesystem_encryption:
+      tool: "luks"
+      mount_point: "/var/lib/postgresql"
+      key_file: "/etc/postgresql/encryption.key"
+    
+    # Application-level encryption
+    application_encryption:
+      sensitive_columns:
+        - "user_management.users.password_hash"
+        - "configuration.secrets.value"
+      encryption_key_rotation: "quarterly"
+  
+  # Audit logging
+  audit_logging:
+    enabled: true
+    
+    # pgAudit configuration
+    pgaudit:
+      enabled: true
+      log_catalog: "off"
+      log_level: "info"
+      log_parameter: "on"
+      log_relation: "on"
+      log_statement_once: "off"
+      log: "all"
+    
+    # Log rotation
+    log_rotation:
+      enabled: true
+      max_size: "100MB"
+      max_files: 30
+      compression: true
+
+# Performance Tuning
+performance_tuning:
+  # Memory configuration
+  memory_tuning:
+    # Shared memory
+    shared_buffers: "16GB"          # 25% of total RAM
+    effective_cache_size: "48GB"    # 75% of total RAM
+    work_mem: "32MB"                # Per connection
+    maintenance_work_mem: "2GB"     # For maintenance operations
+    
+    # Memory context
+    max_stack_depth: "7MB"
+    dynamic_shared_memory_type: "posix"
+    huge_pages: "try"
+  
+  # I/O configuration
+  io_tuning:
+    # Checkpoint configuration
+    checkpoint_completion_target: 0.9
+    checkpoint_timeout: "5min"
+    checkpoint_warning: "30s"
+    
+    # WAL configuration
+    wal_buffers: "16MB"
+    wal_writer_delay: "200ms"
+    wal_writer_flush_after: "1MB"
+    
+    # Background writer
+    bgwriter_delay: "200ms"
+    bgwriter_lru_maxpages: 100
+    bgwriter_lru_multiplier: 2.0
+    bgwriter_flush_after: "512kB"
+  
+  # Query optimization
+  query_tuning:
+    # Planner configuration
+    random_page_cost: 1.1           # SSD optimization
+    seq_page_cost: 1.0
+    effective_io_concurrency: 200   # SSD optimization
+    
+    # Statistics
+    default_statistics_target: 100
+    constraint_exclusion: "partition"
+    
+    # Parallelism
+    max_parallel_workers: 16
+    max_parallel_workers_per_gather: 4
+    max_parallel_maintenance_workers: 4
+    parallel_tuple_cost: 0.1
+    parallel_setup_cost: 1000.0
+  
+  # Connection optimization
+  connection_tuning:
+    max_connections: 1000
+    superuser_reserved_connections: 3
+    
+    # Authentication
+    authentication_timeout: "1min"
+    password_encryption: "scram-sha-256"
+    
+    # Statement timeout
+    statement_timeout: "0"          # Disabled by default
+    lock_timeout: "0"               # Disabled by default
+    idle_in_transaction_session_timeout: "60min"

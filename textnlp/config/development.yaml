@@ -1,0 +1,174 @@
+# TextNLP Development Environment Configuration
+
+app:
+  name: TextNLP Development
+  version: 1.0.0
+  environment: development
+  debug: true
+  
+server:
+  host: 0.0.0.0
+  port: 8000
+  workers: 1  # Single worker for development
+  reload: true
+  log_level: debug
+  
+gpu:
+  enabled: true
+  devices: [0]  # Use first GPU
+  memory_fraction: 0.9
+  allow_growth: true
+  mixed_precision: true
+  
+models:
+  cache_dir: ./models
+  default: gpt2
+  preload:
+    - gpt2
+    - gpt2-medium
+  max_cache_size_gb: 20
+  loading_timeout: 300
+  
+  available:
+    starter:
+      - gpt2
+      - gpt2-medium
+    professional:
+      - gpt2
+      - gpt2-medium
+      - gpt2-large
+      - gpt2-xl
+    enterprise:
+      - all
+      
+inference:
+  max_batch_size: 8
+  max_sequence_length: 2048
+  default_temperature: 0.7
+  default_top_p: 0.9
+  default_max_tokens: 100
+  timeout: 30
+  
+  optimization:
+    use_flash_attention: false  # Requires specific GPU
+    use_quantization: false
+    compile_model: false  # PyTorch 2.0 compile
+    
+database:
+  provider: sqlite
+  url: sqlite:///./textnlp_dev.db
+  echo: true  # Log SQL queries
+  
+redis:
+  host: localhost
+  port: 6379
+  db: 0
+  decode_responses: true
+  
+storage:
+  provider: local
+  local:
+    base_path: ./storage
+    models_path: ./storage/models
+    outputs_path: ./storage/outputs
+    temp_path: ./storage/temp
+    
+auth:
+  enabled: false  # Disable auth for development
+  jwt_secret: development-secret-key
+  jwt_algorithm: HS256
+  jwt_expiration_minutes: 60
+  
+  api_keys:
+    starter: dev-starter-key
+    professional: dev-pro-key
+    enterprise: dev-enterprise-key
+    
+rate_limiting:
+  enabled: false  # Disable for development
+  
+monitoring:
+  enabled: true
+  metrics_port: 9090
+  health_check_interval: 30
+  
+  exporters:
+    prometheus: true
+    console: true
+    
+logging:
+  level: DEBUG
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  handlers:
+    console:
+      enabled: true
+      level: DEBUG
+    file:
+      enabled: true
+      level: INFO
+      path: ./logs/textnlp_dev.log
+      max_size_mb: 10
+      backup_count: 3
+      
+content_filtering:
+  enabled: false  # Disable for development
+  
+cors:
+  enabled: true
+  allow_origins:
+    - http://localhost:3000
+    - http://localhost:8080
+    - http://127.0.0.1:3000
+    - http://127.0.0.1:8080
+  allow_credentials: true
+  allow_methods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    - OPTIONS
+  allow_headers:
+    - "*"
+    
+development:
+  auto_reload_models: true
+  enable_profiling: true
+  enable_debug_endpoints: true
+  mock_gpu: false  # Set to true if no GPU available
+  
+  jupyter:
+    enabled: true
+    port: 8888
+    token: development-token
+    
+  tensorboard:
+    enabled: true
+    log_dir: ./tensorboard_logs
+    port: 6006
+    
+testing:
+  fixtures_path: ./tests/fixtures
+  test_models:
+    - gpt2  # Small model for testing
+  mock_external_services: true
+  
+# Feature flags for development
+features:
+  streaming: true
+  fine_tuning: false
+  custom_models: false
+  model_upload: false
+  batch_processing: true
+  webhooks: false
+  
+# Development utilities
+utils:
+  seed: 42  # For reproducibility
+  deterministic: true
+  benchmark_mode: false
+  
+# Local development overrides
+overrides:
+  # Override any setting for local development
+  # Example:
+  # models.default: gpt2-medium
